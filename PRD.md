@@ -144,7 +144,7 @@ Camera paths keyed by id:
   - Loads tiles on demand as images from the filesystem layout.
   - Keeps a small margin of tiles beyond the viewport and evicts far-away tiles to limit memory usage.
   - Renders tiles each frame via `requestAnimationFrame`.
-- In v1, tiles are loaded only when needed. Following a path may show visible tile pop-in; a later version should add a smarter preloading strategy to make playback perfectly smooth.
+- In v1, tiles are loaded strictly on demand. Complexity regarding preloading or predictive fetching is explicitly out of scope. Visible tile pop-in during rapid movement is acceptable for this version.
 
 ### 7.2 Exploration Mode
 - Input:
@@ -168,16 +168,26 @@ Camera paths keyed by id:
 ## 8. Tile Generation Pipeline & Renderers
 
 ### 8.1 Tile Generation Pipeline (Backend Scripts)
-- Input:
-  - `config.json` for a dataset (zoom levels and identifiers).
-  - A renderer script in `renderers/` with its own hard-coded rendering parameters.
-- Process:
-  - For each required tile `(level, x, y)`:
-    - Call the renderer with `(level, x, y)` to produce an image for that tile.
+- **Renderer Interface:**
+  - Renderers are Python classes that implement a simple interface: `render(level, x, y) -> Image`.
+  - Input: `level`, `x`, `y` coordinates.
+  - Output: A bitmap image ready to be saved.
+
+- **Path-Based Generation Algorithm (Discrete Viewport Sampling):**
+  - Instead of generating the full infinite tree, we generate tiles along a specific camera path.
+  - **Algorithm:**
+    1. Discretize the camera path into fine time steps.
+    2. For each step, calculate the camera's viewport bounding box at the current zoom level.
+    3. Identify all integer tile coordinates `(level, x, y)` that intersect this bounding box.
+    4. Collect the union of all such tiles to generate.
+
+- **Process:**
+  - Load dataset configuration.
+  - Instantiate the specified renderer class.
+  - Run the sampling algorithm to get a list of required tiles.
+  - For each required tile:
+    - Call `renderer.render(level, x, y)`.
     - Save to `datasets/{dataset_id}/tiles/{level}/{x}/{y}.png`.
-  - Optionally, generate only tiles near:
-    - A specified camera path.
-    - A sampled set of exploration starting points.
 
 ### 8.2 Built-in Renderers (v1)
 - `debug_quadtile_renderer`:
@@ -200,5 +210,4 @@ Camera paths keyed by id:
   - Real-time feel; use `requestAnimationFrame` for rendering and camera updates.
   - Avoid layout thrashing by batching DOM updates per frame.
 - Open questions:
-  - How aggressive should tile preloading and eviction be by default?
-  - Do we need optional support for a thin HTTP API later (e.g. to trigger new dataset generation remotely), while keeping the frontend file-based?
+
