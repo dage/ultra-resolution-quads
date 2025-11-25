@@ -16,6 +16,30 @@
 - Pluggable renderers (scripts in a `renderers/` folder).
 - Primary browser target: Chrome on desktop.
 
+## 3. Coordinate System: Layer-Stack Architecture
+
+To support unlimited zoom depth without floating-point precision loss:
+
+- **Fixed viewport**: Camera stays centered; tiles move around it.
+- **Integer tile indexing**: Tiles use `(level, x, y)` coordinates—exact, no floating-point error.
+- **Per-layer offset**: A float offset [0, 1) tracks fractional position within the current tile.
+- **Why this works**: Integer indices are exact; offsets stay high-precision. No precision wall at level ~53.
+
+Result: Zoom depth limited only by data generation, not by IEEE 754 floating-point.
+
+
+## 4. Implementation: Layer-Stack Details
+
+**Frontend:** Layer stack `{level, tileX, tileY, offsetX, offsetY}` per zoom level.
+- Pan updates offset; when offset > 1.0, tile index increments (automatic wrapping)
+- Zoom interpolates between adjacent layers with crossfade
+- Render: fixed camera at center, tiles positioned by layer state
+
+**Backend:** Serve `GET /tiles/{dataset_id}/{level}/{x}/{y}`
+- Compute bounds: `[x/2^level, (x+1)/2^level] × [y/2^level, (y+1)/2^level]`
+- Pass to renderer; cache at `{dataset_id}/L{level}/X{x}/Y{y}.png`
+
+
 ## 6. System Overview
 
 ### 6.1 Frontend (viewer)
