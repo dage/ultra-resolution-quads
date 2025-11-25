@@ -19,7 +19,7 @@
 ## 6. System Overview
 
 ### 6.1 Frontend (viewer)
-- Single full-window view (canvas or similar).
+- Single full-window view using DOM nodes (one div per quadtile).
 - Two modes:
   - Exploration mode: mouse drag to pan; scroll wheel to zoom in/out.
   - Experience mode: camera follows the keyframe path; user passively watches or uses a scrubber to navigate time (no direct pan/zoom).
