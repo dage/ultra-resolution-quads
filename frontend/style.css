@@ -1,0 +1,109 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: sans-serif;
+    background-color: #111;
+    color: #eee;
+}
+
+#app {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+#viewer {
+    flex-grow: 1;
+    position: relative;
+    overflow: hidden;
+    background-color: #000;
+    cursor: crosshair;
+}
+
+#layers-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none; /* Allow mouse events to pass through to viewer for panning */
+}
+
+.tile-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* We will transform this container based on offsets */
+}
+
+.tile {
+    position: absolute;
+    width: 256px;
+    height: 256px;
+    image-rendering: pixelated; /* For debug sharpness */
+}
+
+#ui {
+    width: 300px;
+    background-color: #222;
+    border-left: 1px solid #444;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+    z-index: 100;
+}
+
+.panel {
+    background-color: #333;
+    padding: 15px;
+    border-radius: 8px;
+}
+
+.panel h2 {
+    margin-top: 0;
+    font-size: 1.1em;
+    border-bottom: 1px solid #555;
+    padding-bottom: 5px;
+}
+
+.control-group {
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+}
+
+.control-group label {
+    font-size: 0.9em;
+    margin-bottom: 5px;
+    display: flex;
+    justify-content: space-between;
+}
+
+input[type="range"], input[type="number"], select {
+    width: 100%;
+    background: #444;
+    border: 1px solid #555;
+    color: #fff;
+    padding: 5px;
+}
+
+button {
+    padding: 8px;
+    background: #555;
+    color: white;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 5px;
+}
+
+button:hover {
+    background: #666;
+}

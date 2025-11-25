@@ -24,6 +24,7 @@ The PRD is written to be directly actionable for coding agents: all data flows a
 - All data for the viewer is exposed as static files (JSON + images) under a **base data URI**.
 - The frontend receives a single config value at build-time or startup:
   - `BASE_DATA_URI` – e.g. `/data/` or `https://example.com/ultra-quads/`.
+- On disk, all datasets live under a `datasets/` directory at the project root; the static server maps that directory so it is reachable as `BASE_DATA_URI + "datasets/"`.
 - Under `BASE_DATA_URI`, the following file layout is expected:
   - `datasets/index.json` – list of datasets and their metadata.
   - `datasets/{dataset_id}/config.json` – minimal dataset configuration needed by the viewer (e.g. zoom levels).
@@ -187,7 +188,7 @@ Camera paths keyed by id:
   - Run the sampling algorithm to get a list of required tiles.
   - For each required tile:
     - Call `renderer.render(level, x, y)`.
-    - Save to `datasets/{dataset_id}/tiles/{level}/{x}/{y}.png`.
+    - Save to `datasets/{dataset_id}/tiles/{level}/{x}/{y}.png` at project root.
 
 ### 8.2 Built-in Renderers (v1)
 - `debug_quadtile_renderer`:
@@ -211,3 +212,30 @@ Camera paths keyed by id:
   - Avoid layout thrashing by batching DOM updates per frame.
 - Open questions:
 
+## 10. Development & Artifacts
+
+### 10.1 Artifacts Folder (`artifacts/`)
+- A local-only folder for storing temporary development files.
+- **Git Ignored:** This folder is excluded from version control.
+- **Contents:**
+  - Screenshots taken during testing.
+  - Temporary log files (e.g., server logs).
+  - Temporary test scripts or throwaway code.
+- **Maintenance:** Developers should manually clean this folder periodically. It serves as a scratchpad to keep the project root clean.
+
+## 11. Testing Strategy
+
+### 11.1 Tests Folder (`tests/`)
+- Contains automated test scripts to verify core logic without needing a full browser environment.
+- **Key Tests:**
+  - `tests/test_frontend.js`: Uses a Node.js sandbox to mock the DOM and execute `frontend/main.js`. It verifies:
+    - **Zoom Logic:** Correct level increments/decrements and offset wrapping.
+    - **Rendering:** Correct identification of visible tiles for parent/child layers.
+    - **Crossfading:** Correct opacity calculations (Parent stable at 1.0, Child fades in).
+    - **Performance:** Verification that DOM elements are reused (reconciled) rather than recreated every frame.
+
+### 11.2 Running Tests
+Run the frontend logic test suite via Node.js:
+```bash
+node tests/test_frontend.js
+```
