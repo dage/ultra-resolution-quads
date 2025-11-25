@@ -1,102 +1,204 @@
 # Ultra-Resolution Quads – PRD
 
 ## 1. Product Summary
-- Single-view, ultra-resolution image explorer.
-- Image space is an infinite quadtree (view -> 4 -> 4 -> …).
+- Single-view, ultra-resolution image explorer in the browser.
+- Image space is an infinite quadtree (view → 4 → 4 → …) backed by precomputed tiles.
 - Uses sparse quadtree tiles so only data near the camera path is rendered.
-- Supports a “swimming” camera path that zooms extremely far into an image.
- - Frontend: one big view with mouse pan + scroll zoom.
+- Supports a continuous camera path that can zoom extremely far into an image.
+- Frontend: one big view with mouse pan + scroll zoom, plus explicit camera controls.
+
+The PRD is written to be directly actionable for coding agents: all data flows are file/URI based, with minimal hidden behavior.
 
 ## 2. Goals
 - Interactive exploration of extremely large / detailed images.
-- Long, smooth zoom paths without loading the full dataset.
-- Backend that generates and serves just-in-time tiles for ultra-res datasets.
-- Simple dataset management: list, create, select, rename, delete ultra-res sets.
-- Easy experimentation with mathematical images (e.g. polar-Newton) and more practical sources.
-- Pluggable renderers (scripts in a `renderers/` folder).
+- Long, smooth zoom paths without loading the full dataset at once.
+- Simple backend: Python scripts that generate and manage datasets on disk (no HTTP API required).
+- Simple dataset management via files: create, list, select, rename, delete datasets by editing JSON / running scripts.
+- Easy experimentation with mathematical images (e.g. polar-Newton, Mandelbrot) and practical sources.
+- Pluggable renderers (Python scripts in a `renderers/` folder).
 - Primary browser target: Chrome on desktop.
 
-## 3. Coordinate System: Layer-Stack Architecture
+## 3. High-Level Architecture
 
+### 3.1 Data Layout & Access Pattern
+- All data for the viewer is exposed as static files (JSON + images) under a **base data URI**.
+- The frontend receives a single config value at build-time or startup:
+  - `BASE_DATA_URI` – e.g. `/data/` or `https://example.com/ultra-quads/`.
+- Under `BASE_DATA_URI`, the following file layout is expected:
+  - `datasets/index.json` – list of datasets and their metadata.
+  - `datasets/{dataset_id}/config.json` – minimal dataset configuration needed by the viewer (e.g. zoom levels).
+  - `datasets/{dataset_id}/tiles/{level}/{x}/{y}.png` – tile images.
+  - `datasets/{dataset_id}/paths.json` – camera paths for that dataset.
+  - `datasets/{dataset_id}/tiles_meta.json` (optional) – metadata per tile if needed.
+- The frontend **only** reads these JSON and image files via HTTP GET; it does not call any JSON-over-HTTP API endpoints.
+
+### 3.2 Frontend Viewer
+- Single-page app using DOM nodes (one `div` or `img` per tile).
+- Renders a fixed viewport; camera movement is implemented by translating and swapping tiles.
+- Two main modes:
+  - **Exploration mode** – user/agent can pan and zoom freely.
+  - **Experience mode** – camera follows a predefined keyframe path.
+
+### 3.3 Backend Tooling (Python)
+- Backend is a collection of Python scripts in `backend/` that operate directly on the filesystem layout above.
+- Responsibilities:
+  - Create new datasets (`datasets/{dataset_id}/` directories and `config.json`).
+  - Manage dataset metadata (update `datasets/index.json`).
+  - Generate tiles into `datasets/{dataset_id}/tiles/...`.
+  - Generate / edit camera paths saved into `paths.json`.
+  - Optionally perform precomputation along a camera path.
+- No dedicated HTTP API service is required for v1; a simple static file server (e.g. `python -m http.server`) can host the data and frontend.
+
+## 4. Coordinate System & Camera Model
+
+### 4.1 Layer-Stack Architecture
 To support unlimited zoom depth without floating-point precision loss:
-
-- **Fixed viewport**: Camera stays centered; tiles move around it.
+- **Fixed viewport**: Camera stays conceptually centered; tiles move around it.
 - **Integer tile indexing**: Tiles use `(level, x, y)` coordinates—exact, no floating-point error.
-- **Per-layer offset**: A float offset [0, 1) tracks fractional position within the current tile.
-- **Why this works**: Integer indices are exact; offsets stay high-precision. No precision wall at level ~53.
+- **Per-layer offsets**: A float offset in `[0, 1)` tracks fractional position within the current tile.
+- **Why this works**: Integer indices remain exact; offsets stay high-precision. There is no precision wall at level ~53.
 
-Result: Zoom depth limited only by data generation, not by IEEE 754 floating-point.
+Result: Zoom depth is limited only by tile generation, not by IEEE 754 floating-point.
 
+### 4.2 Camera State Representation
+- Camera state used by the frontend and stored in JSON:
+  - `level` – current zoom level (integer).
+  - `tileX`, `tileY` – integer tile indices at that level.
+  - `offsetX`, `offsetY` – floats in `[0, 1)` for intra-tile position.
+  - `rotation` (optional) – rotation angle in radians or degrees.
+- Internal layer stack representation in the viewer:
+  - Array of layers: `{ level, tileX, tileY, offsetX, offsetY }` per zoom level.
 
-## 4. Implementation: Layer-Stack Details
+## 5. Tiles & Rendering
 
-**Frontend:** Layer stack `{level, tileX, tileY, offsetX, offsetY}` per zoom level.
-- Pan updates offset; when offset > 1.0, tile index increments (automatic wrapping)
-- Zoom interpolates between adjacent layers with crossfade
-- Render: fixed camera at center, tiles positioned by layer state
+### 5.1 Frontend Rendering Logic
+- The frontend renders tiles as positioned DOM elements (e.g. absolutely positioned `div` or `img`).
+- Pan updates the camera offsets; when `offsetX` or `offsetY` are outside `[0, 1)`, the corresponding tile index increments/decrements (wrapping logic).
+- Zoom interpolates between adjacent layers with a crossfade:
+  - As we zoom into a child quadrant, fade out the parent tile and fade in the four child tiles.
+- Rendering loop uses `requestAnimationFrame` for smooth updates.
 
-**Backend:** Serve `GET /tiles/{dataset_id}/{level}/{x}/{y}`
-- Compute bounds: `[x/2^level, (x+1)/2^level] × [y/2^level, (y+1)/2^level]`
-- Pass to renderer; cache at `{dataset_id}/L{level}/X{x}/Y{y}.png`
+### 5.2 Tile Indexing
+- Tiles are addressed only by `(level, x, y)` and mapped to paths:
+  - `datasets/{dataset_id}/tiles/{level}/{x}/{y}.png`.
 
+## 6. Dataset & Metadata Format
 
-## 6. System Overview
+### 6.1 `datasets/index.json`
+Top-level list of datasets:
+```json
+{
+  "datasets": [
+    {
+      "id": "mandelbrot_deep",
+      "name": "Mandelbrot Deep Zoom",
+      "description": "Deep zoom into the Mandelbrot set"
+    },
+    {
+      "id": "debug_quadtile",
+      "name": "Debug Quadtile",
+      "description": "Synthetic dataset that displays tile coordinates"
+    }
+  ]
+}
+```
 
-### 6.1 Frontend (viewer)
-- Single full-window view using DOM nodes (one div per quadtile).
-- Two modes:
-  - Exploration mode: mouse drag to pan; scroll wheel to zoom in/out.
-  - Experience mode: camera follows the keyframe path; user passively watches or uses a scrubber to navigate time (no direct pan/zoom).
-- Both modes share the same rendering/code path: crossfading between levels, moving quadtile tiles, and dynamically loading tiles.
-- Exploration mode: load tiles on demand as the user moves (no deep preloading).
-- Experience mode: preload tiles in the background along the path (up to ~5 levels ahead) so everything is cached before the camera arrives.
-- Seamless zooming via crossfade: as we zoom into a child quadrant, fade out the parent tile and fade in the four child tiles.
-- Minimal UI to:
-  - Pick a dataset.
-  - Edit a simple keyframe-based camera path (linear interpolation for position, zoom, and rotation to start; splines later).
-  - Play / pause the camera path.
+### 6.2 `datasets/{dataset_id}/config.json`
+Dataset configuration:
+```json
+{
+  "id": "mandelbrot_deep",
+  "name": "Mandelbrot Deep Zoom",
+  "min_level": 0,
+  "max_level": 20
+}
+```
 
-### 6.2 Backend (Python + Gemini)
-- Python service that manages datasets, camera paths, tile metadata, and renderers.
-- Dataset CRUD: list all datasets, create new, rename, delete, select one for editing.
-- Serves tiles given `dataset_id + tile_id`; can precompute tiles along a path.
-- Uses Gemini API to help with dataset parameters and interesting camera paths.
-- Configuration via `.env` and `.env_template` (Gemini key, storage, etc.).
+### 6.3 `datasets/{dataset_id}/paths.json`
+Camera paths keyed by id:
+```json
+{
+  "paths": [
+    {
+      "id": "default_path",
+      "name": "Default Path",
+      "keyframes": [
+        {
+          "camera": { "level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.5, "offsetY": 0.5, "rotation": 0.0 }
+        }
+      ]
+    }
+  ]
+}
+```
 
-### 6.3 Tile Generation Pipeline
-- Input: base renderer (e.g. polar-Newton / fractal) + dataset config (bounds, levels, params).
+### 6.4 Optional `tiles_meta.json`
+- Optional per-dataset metadata file for tiles (may be added later).
+
+## 7. Frontend Behavior
+
+### 7.1 Shared Rendering Engine
+- Both frontend modes use the same core engine:
+  - Maintains camera state (`level`, `tileX`, `tileY`, `offsetX`, `offsetY`, `rotation`).
+  - Computes which tiles are visible for the current camera and viewport.
+  - Loads tiles on demand as images from the filesystem layout.
+  - Keeps a small margin of tiles beyond the viewport and evicts far-away tiles to limit memory usage.
+  - Renders tiles each frame via `requestAnimationFrame`.
+- In v1, tiles are loaded only when needed. Following a path may show visible tile pop-in; a later version should add a smarter preloading strategy to make playback perfectly smooth.
+
+### 7.2 Exploration Mode
+- Input:
+  - Mouse drag to pan (updates offsets and tile indices).
+  - Scroll wheel to zoom in/out (updates active layer and crossfade).
+- Camera UI:
+  - Explicit panel showing current camera state:
+    - Numeric inputs/sliders for `level`, `tileX`, `tileY`, `offsetX`, `offsetY`, and `rotation`.
+    - Buttons for small incremental moves (e.g. pan up/down/left/right, zoom in/out).
+  - Changing these values updates the camera state and lets both humans and AI agents control the viewpoint and capture screenshots.
+
+### 7.3 Path Playback Mode
+- Camera follows a keyframe-based path defined in the dataset’s `paths.json`.
+- Keyframes are ordered in the `keyframes` array; playback progresses through them in sequence using a normalized time parameter between successive keyframes.
+- Linear interpolation of position (`tileX`, `tileY`, `offsetX`, `offsetY`), `level`, and `rotation` between successive keyframes initially.
+- UI:
+  - Dataset selector.
+  - Play/pause controls and time scrubber for the active dataset’s default path.
+- Keyframes and paths are authored offline (via scripts or manual JSON editing), not created or edited in the frontend.
+
+## 8. Tile Generation Pipeline & Renderers
+
+### 8.1 Tile Generation Pipeline (Backend Scripts)
+- Input:
+  - `config.json` for a dataset (zoom levels and identifiers).
+  - A renderer script in `renderers/` with its own hard-coded rendering parameters.
 - Process:
-  - Sparse quadtree tiling; generate tiles only for current camera viewport and a small predictive window along the camera path.
-  - Algorithm to decide which tiles to render: all tiles whose screen-space projection intersects the viewport (plus margin) over a short time horizon.
-- Indexing: Quadtile Hierarchical String Indexing (OpenStreetMap-style):
-  - `"0"` = full image; children are `"00"`, `"01"`, `"10"`, `"11"`; deeper tiles extend the string (e.g. `"0132"`).
-- Output: tiles at `/{dataset_id}/{tile_id}.png`, with metadata like:
-  - `tiles = { "0": {...}, "01": {..., "parent": "0"}, "0132": {..., "parent": "013"} }`
+  - For each required tile `(level, x, y)`:
+    - Call the renderer with `(level, x, y)` to produce an image for that tile.
+    - Save to `datasets/{dataset_id}/tiles/{level}/{x}/{y}.png`.
+  - Optionally, generate only tiles near:
+    - A specified camera path.
+    - A sampled set of exploration starting points.
 
-### 6.4 Built-in Renderers (v1)
-- `debug_quadtile_renderer`: renders a flat background and writes the tile ID (e.g. `0132`) in large text in the center of the tile; used to validate tiling, crossfades, and camera movement.
-- `mandelbrot_deepzoom_renderer`: renders a Mandelbrot fractal slice for the tile based on camera position/zoom, tuned for visually interesting deep zooms (simulating a long Mandelbrot zoom path).
+### 8.2 Built-in Renderers (v1)
+- `debug_quadtile_renderer`:
+  - Renders a flat background and writes the tile ID (e.g. `L5_x12_y7`) in large text at the center.
+  - Used to validate tiling, crossfades, and camera movement.
+- `mandelbrot_deepzoom_renderer`:
+  - Renders a Mandelbrot fractal slice for each tile based on the mapped complex-plane bounds.
+  - Tuned for visually interesting deep zoom paths.
 
-## 7. Data & APIs (first pass)
-- Entities:
-  - `Dataset`: id, name, type, base params.
-  - `CameraPath`: id, dataset_id, list of keyframes.
-  - `Keyframe`: time, position, zoom, rotation_angle, params.
-  - `Tile`: tile_id (quadtile string), dataset_id, zoom, parent, storage_path.
-  - `Renderer`: id, name, script_path.
-- API ideas:
-  - `GET /datasets` – list datasets.
-  - `POST /datasets` – create dataset config.
-  - `PATCH /datasets/:id` – rename / update dataset.
-  - `DELETE /datasets/:id` – delete dataset.
-  - `POST /paths` – create / update camera path for a dataset.
-  - `GET /tiles/{dataset_id}/{tile_id}` – fetch tile.
-  - `POST /paths/:id/precompute` – precompute tiles along a path.
-  - `GET /renderers` – list available renderer scripts from the `renderers/` folder.
-
-## 8. Constraints & Open Questions
-- Target max resolution / zoom depth: no hard limit; design for “as far as we can push it” using sparse tiling.
-- Frontend stack: vanilla JavaScript + canvas to start; keep it minimal.
-- Gemini involvement: initial version does not use Gemini; long-term goal is AI-based image-generation renderers (e.g. Nano Banana / Nano Banana Pro).
-- Storage: local filesystem for all tiles in v1.
-- Performance: real-time feel; use `requestAnimationFrame` for rendering and camera updates.
+## 9. Constraints & Open Questions
+- Target max resolution / zoom depth:
+  - No hard limit; design for “as far as we can push it” using sparse tiling and on-demand generation.
+- Frontend stack:
+  - Vanilla JavaScript + DOM-based tile rendering (no canvas).
+  - Minimal dependencies to keep it easy for coding agents to manipulate.
+- Storage:
+  - Local filesystem for all tiles and JSON in v1.
+  - Deployed via static hosting or a simple static HTTP server.
+- Performance:
+  - Real-time feel; use `requestAnimationFrame` for rendering and camera updates.
+  - Avoid layout thrashing by batching DOM updates per frame.
+- Open questions:
+  - How aggressive should tile preloading and eviction be by default?
+  - Do we need optional support for a thin HTTP API later (e.g. to trigger new dataset generation remotely), while keeping the frontend file-based?
