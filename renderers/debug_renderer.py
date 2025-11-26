@@ -8,24 +8,23 @@ class DebugQuadtileRenderer:
         image = Image.new('RGB', (self.tile_size, self.tile_size), color=(240, 240, 240))
         draw = ImageDraw.Draw(image)
         
-        # Draw border
+        # Draw border only
         draw.rectangle([0, 0, self.tile_size-1, self.tile_size-1], outline=(200, 200, 200), width=1)
-        
-        # Draw text
-        text = f"L{level}\nx{x}\ny{y}"
-        # Simple centering (approximate without font metrics if default font is used)
-        # But let's try to be a bit nicer if possible, though default font is small.
-        
-        # We can't easily load system fonts reliably across platforms without knowing paths, 
-        # so we'll use the default PIL font which is very small, or try to load a common one if available.
-        # For simplicity/robustness, we stick to default or a simple bitmap font if available.
-        
-        # better: Draw a crosshair
-        mid = self.tile_size // 2
-        draw.line([(mid, 0), (mid, self.tile_size)], fill=(220, 220, 220))
-        draw.line([(0, mid), (self.tile_size, mid)], fill=(220, 220, 220))
 
-        # Draw text in black
-        draw.text((10, 10), text, fill=(0, 0, 0))
+        # L1,X1,Y1 style text, centered and horizontal
+        text = f"L{level},X{x},Y{y}"
+        try:
+            # ~30% smaller than previous 0.22 factor
+            font = ImageFont.truetype("Tahoma.ttf", int(self.tile_size * 0.15))
+        except Exception:
+            font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        text_x = (self.tile_size - text_w) / 2
+        # Slightly bias upward to look visually centered
+        text_y = (self.tile_size - text_h) / 2 - self.tile_size * 0.03
+        draw.text((text_x, text_y), text, fill=(0, 0, 0), font=font)
         
         return image
