@@ -111,7 +111,7 @@ def save_default_paths(dataset_id, renderer_type):
     
     paths = []
     
-    if renderer_type == 'mandelbrot' or renderer_type == 'debug':
+    if renderer_type == 'mandelbrot':
         # Target: A known deep zoom point (e.g., Seahorse Valley)
         # Point: -0.7436438870371587 + 0.13182590420531197i
         target_re = -0.7436438870371587
@@ -130,17 +130,6 @@ def save_default_paths(dataset_id, renderer_type):
             "id": "deep_zoom_seahorse",
             "name": "Seahorse Valley Deep Zoom (L20)",
             "keyframes": [k1, k2]
-        })
-
-    if renderer_type == 'debug':
-        # Default Debug Path
-        paths.append({
-            "id": "default",
-            "name": "Debug Diagonal",
-            "keyframes": [
-                {"camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.5, "offsetY": 0.5, "rotation": 0}},
-                {"camera": {"level": 4, "tileX": 8, "tileY": 8, "offsetX": 0.5, "offsetY": 0.5, "rotation": 0}}
-            ]
         })
 
     with open(path_file, 'w') as f:
