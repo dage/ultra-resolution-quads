@@ -152,7 +152,7 @@ def generate_full_pyramid(renderer, dataset_id, max_level):
 
 import camera_utils
 
-def generate_tiles_along_path(renderer, dataset_id, paths, max_level, margin=4):
+def generate_tiles_along_path(renderer, dataset_id, paths, margin=4):
     print(f"Generating tiles along paths for {dataset_id}...")
     base_path = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles')
     
@@ -190,8 +190,7 @@ def generate_tiles_along_path(renderer, dataset_id, paths, max_level, margin=4):
                 visible = camera_utils.get_visible_tiles(cam, margin=margin)
                 
                 for tile in visible:
-                    if tile[0] <= max_level:
-                        required_tiles.add(tile)
+                    required_tiles.add(tile)
 
     print(f"Identified {len(required_tiles)} unique tiles to generate.")
     
@@ -276,7 +275,7 @@ def main():
         print("Generating tiles along PATH...")
         # If mode is path, we pull the generated paths to guide the renderer
         start_time = time.time()
-        generated = generate_tiles_along_path(renderer, args.dataset, paths_data, args.max_level)
+        generated = generate_tiles_along_path(renderer, args.dataset, paths_data)
         elapsed = time.time() - start_time
         avg = elapsed / generated if generated else 0.0
         # File size stats (all tiles for this dataset after run)
