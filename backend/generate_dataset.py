@@ -3,6 +3,8 @@ import json
 import argparse
 import sys
 import math
+import time
+import shutil
 from PIL import Image
 
 # Add project root to path to find renderers
@@ -195,6 +197,7 @@ def generate_tiles_along_path(renderer, dataset_id, paths, max_level, margin=4):
     
     # Generate
     count = 0
+    generated = 0
     for (level, x, y) in required_tiles:
         count += 1
         if count % 100 == 0:
@@ -207,8 +210,10 @@ def generate_tiles_along_path(renderer, dataset_id, paths, max_level, margin=4):
         if not os.path.exists(img_path):
             img = renderer.render(level, x, y)
             img.save(img_path)
+            generated += 1
             
-    print("Path generation complete.")
+    print(f"Path generation complete. Generated {generated} tiles.")
+    return generated
 
 
 def main():
@@ -243,14 +248,48 @@ def main():
     # Generate/Save Paths
     paths_data = save_default_paths(args.dataset, args.renderer)
     
+    tiles_root = os.path.join(DATA_ROOT, 'datasets', args.dataset, 'tiles')
+    # Clear previous tiles so each run is fresh
+    if os.path.exists(tiles_root):
+        shutil.rmtree(tiles_root)
+
     print(f"Mode: {args.mode}")
     if args.mode == 'full':
         print("Generating FULL pyramid (all tiles)...")
+        total_tiles = sum((2 ** level) ** 2 for level in range(args.max_level + 1))
+        start_time = time.time()
         generate_full_pyramid(renderer, args.dataset, args.max_level)
+        elapsed = time.time() - start_time
+        avg = elapsed / total_tiles if total_tiles else 0.0
+        # File size stats
+        file_count = 0
+        total_bytes = 0
+        for root, _, files in os.walk(tiles_root):
+            for fname in files:
+                if fname.lower().endswith('.png'):
+                    file_count += 1
+                    total_bytes += os.path.getsize(os.path.join(root, fname))
+        avg_size = total_bytes / file_count if file_count else 0.0
+        avg_kb = avg_size / 1024.0
+        print(f"Stats: tiles={total_tiles}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={tiles_root}")
     else:
         print("Generating tiles along PATH...")
         # If mode is path, we pull the generated paths to guide the renderer
-        generate_tiles_along_path(renderer, args.dataset, paths_data, args.max_level)
+        start_time = time.time()
+        generated = generate_tiles_along_path(renderer, args.dataset, paths_data, args.max_level)
+        elapsed = time.time() - start_time
+        avg = elapsed / generated if generated else 0.0
+        # File size stats (all tiles for this dataset after run)
+        file_count = 0
+        total_bytes = 0
+        for root, _, files in os.walk(tiles_root):
+            for fname in files:
+                if fname.lower().endswith('.png'):
+                    file_count += 1
+                    total_bytes += os.path.getsize(os.path.join(root, fname))
+        avg_size = total_bytes / file_count if file_count else 0.0
+        avg_kb = avg_size / 1024.0
+        print(f"Stats: tiles_generated={generated}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={tiles_root}")
         
     print("Done.")
 
