@@ -253,7 +253,7 @@ def main():
     parser.add_argument('--renderer', choices=['debug', 'mandelbrot'], required=True)
     parser.add_argument('--max_level', type=int, default=4, help='Max level to generate')
     parser.add_argument('--mode', choices=['full', 'path'], default=None, help='Generation mode (default depends on renderer)')
-    parser.add_argument('--tile_size', type=int, default=256, help='Tile size (pixels) for generated tiles')
+    parser.add_argument('--tile_size', type=int, default=512, help='Tile size (pixels) for generated tiles')
     
     args = parser.parse_args()
     
