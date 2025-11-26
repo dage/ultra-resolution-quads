@@ -445,16 +445,13 @@ function renderLoop() {
     // Calculate all tiles that SHOULD be visible
     const targetTiles = new Map();
     
-    // Parent layer (fade out)
-    // To strictly follow "fade out parent", we reduce its opacity.
-    // However, to avoid background bleeding through, we usually keep parent 100% 
-    // until child is fully opaque if they overlap perfectly.
-    // But the PRD says "fade out the parent". Let's try linear fade out: 1.0 - zoomOffset.
-    // Note: If zoomOffset is 0.0, parent is 1.0. If zoomOffset is 1.0, parent is 0.0.
-    const parentOpacity = 1.0;
-    updateLayer(state.camera.level, parentOpacity, targetTiles);
+    // Base stack: keep all coarser levels fully opaque as a stable background.
+    // We only fade in additional detail layers above the current camera level.
+    for (let level = 0; level <= state.camera.level; level++) {
+        updateLayer(level, 1.0, targetTiles);
+    }
     
-    // Child layer (fade in)
+    // Child layer (fade in) above the current level.
     if (state.camera.level < state.config.max_level) {
         const childOpacity = state.camera.zoomOffset;
         updateLayer(state.camera.level + 1, childOpacity, targetTiles);
@@ -479,10 +476,10 @@ function renderLoop() {
             activeTileElements.set(key, el);
         }
         
-        // Update styles
-        // Use a highly performant transform update
-        // We can optimize by only updating if changed, but browser layout engine handles this well.
-        el.style.transform = `translate(${props.tx.toFixed(1)}px, ${props.ty.toFixed(1)}px) scale(${props.scale.toFixed(4)})`;
+        // Update styles: position via translate, scale via transform.
+        // We avoid rounding here to prevent per-tile rounding differences
+        // from introducing tiny seams between tiles.
+        el.style.transform = `translate(${props.tx}px, ${props.ty}px) scale(${props.scale})`;
         el.style.transformOrigin = 'top left';
         el.style.opacity = props.opacity.toFixed(3);
         el.style.zIndex = props.zIndex;
