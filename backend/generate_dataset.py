@@ -5,6 +5,7 @@ import sys
 import math
 import time
 import shutil
+from concurrent.futures import ProcessPoolExecutor
 from PIL import Image
 
 # Add project root to path to find renderers
@@ -15,8 +16,34 @@ from renderers.mandelbrot_renderer import MandelbrotDeepZoomRenderer
 
 DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
+_renderer_instance = None
+
 def ensure_dirs(path):
     os.makedirs(path, exist_ok=True)
+
+
+def _init_renderer_worker(renderer):
+    """Initializer for ProcessPool workers; shares the renderer instance via pickling."""
+    global _renderer_instance
+    _renderer_instance = renderer
+
+
+def _render_tile(args):
+    level, x, y, base_path = args
+
+    level_path = os.path.join(base_path, str(level), str(x))
+    ensure_dirs(level_path)
+    img_path = os.path.join(level_path, f"{y}.png")
+
+    if os.path.exists(img_path):
+        return False
+
+    if _renderer_instance is None:
+        raise RuntimeError("Renderer instance not initialized in worker")
+
+    img = _renderer_instance.render(level, x, y)
+    img.save(img_path)
+    return True
 
 def update_index(dataset_id, name, description):
     index_path = os.path.join(DATA_ROOT, 'datasets', 'index.json')
@@ -49,7 +76,7 @@ def update_index(dataset_id, name, description):
     with open(index_path, 'w') as f:
         json.dump(data, f, indent=2)
 
-def save_config(dataset_id, name, min_level, max_level):
+def save_config(dataset_id, name, min_level, max_level, tile_size):
     path = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'config.json')
     ensure_dirs(os.path.dirname(path))
     with open(path, 'w') as f:
@@ -57,7 +84,8 @@ def save_config(dataset_id, name, min_level, max_level):
             "id": dataset_id,
             "name": name,
             "min_level": min_level,
-            "max_level": max_level
+            "max_level": max_level,
+            "tile_size": tile_size
         }, f, indent=2)
 
 # Coordinate Mapping Logic (Replicated from Mandelbrot Renderer for Path Calculation)
@@ -194,23 +222,39 @@ def generate_tiles_along_path(renderer, dataset_id, paths, margin=4):
 
     print(f"Identified {len(required_tiles)} unique tiles to generate.")
     
-    # Generate
-    count = 0
-    generated = 0
+    # Build tasks for tiles that are missing
+    tasks = []
     for (level, x, y) in required_tiles:
-        count += 1
-        if count % 100 == 0:
-            print(f"Rendering {count}/{len(required_tiles)}...")
-            
-        level_path = os.path.join(base_path, str(level), str(x))
-        ensure_dirs(level_path)
-        img_path = os.path.join(level_path, f"{y}.png")
-        
+        img_path = os.path.join(base_path, str(level), str(x), f"{y}.png")
         if not os.path.exists(img_path):
-            img = renderer.render(level, x, y)
-            img.save(img_path)
-            generated += 1
-            
+            tasks.append((level, x, y, base_path))
+
+    # Deterministic ordering helps progress tracking and debugging
+    tasks.sort(key=lambda t: (t[0], t[1], t[2]))
+
+    print(f"Rendering {len(tasks)} missing tiles with 8 workers...")
+
+    if not tasks:
+        print("No new tiles needed for path mode.")
+        return 0
+
+    generated = 0
+    try:
+        with ProcessPoolExecutor(max_workers=8, initializer=_init_renderer_worker, initargs=(renderer,)) as executor:
+            for idx, created in enumerate(executor.map(_render_tile, tasks), 1):
+                if idx % 100 == 0:
+                    print(f"Rendering {idx}/{len(tasks)}...")
+                if created:
+                    generated += 1
+    except Exception as e:
+        print(f"Parallel rendering failed ({e}); falling back to single-process mode...")
+        for idx, task in enumerate(tasks, 1):
+            created = _render_tile(task)
+            if idx % 100 == 0:
+                print(f"Rendering {idx}/{len(tasks)}...")
+            if created:
+                generated += 1
+    
     print(f"Path generation complete. Generated {generated} tiles.")
     return generated
 
@@ -221,6 +265,7 @@ def main():
     parser.add_argument('--renderer', choices=['debug', 'mandelbrot'], required=True)
     parser.add_argument('--max_level', type=int, default=4, help='Max level to generate')
     parser.add_argument('--mode', choices=['full', 'path'], default=None, help='Generation mode (default depends on renderer)')
+    parser.add_argument('--tile_size', type=int, default=256, help='Tile size (pixels) for generated tiles')
     
     args = parser.parse_args()
     
@@ -232,17 +277,17 @@ def main():
             args.mode = 'path'
     
     if args.renderer == 'debug':
-        renderer = DebugQuadtileRenderer()
+        renderer = DebugQuadtileRenderer(tile_size=args.tile_size)
         name = "Debug Quadtile"
         desc = "Debug tiles to verify coordinate system"
     elif args.renderer == 'mandelbrot':
-        renderer = MandelbrotDeepZoomRenderer()
+        renderer = MandelbrotDeepZoomRenderer(tile_size=args.tile_size)
         name = "Mandelbrot Deep Zoom"
         desc = "Standard Mandelbrot set with deep zoom path"
     
     print(f"Initializing dataset: {args.dataset}")
     update_index(args.dataset, name, desc)
-    save_config(args.dataset, name, 0, args.max_level)
+    save_config(args.dataset, name, 0, args.max_level, args.tile_size)
     
     # Generate/Save Paths
     paths_data = save_default_paths(args.dataset, args.renderer)
