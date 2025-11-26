@@ -1,5 +1,6 @@
 const BASE_DATA_URI = '..';
-const TILE_SIZE = 256;
+// Logical tile size for layout; actual image resolution can differ.
+const LOGICAL_TILE_SIZE = 256;
 
 // Application State
 const state = {
@@ -217,7 +218,7 @@ function updateViewSize() {
 // Camera Logic
 function pan(dx, dy) {
     const scale = Math.pow(2, state.camera.zoomOffset);
-    const tileSizePx = TILE_SIZE * scale;
+    const tileSizePx = LOGICAL_TILE_SIZE * scale;
     
     const dOffX = -dx / tileSizePx;
     const dOffY = -dy / tileSizePx;
@@ -430,12 +431,16 @@ function getTileImage(datasetId, level, x, y) {
     const img = document.createElement('img');
     img.src = `${BASE_DATA_URI}/datasets/${datasetId}/tiles/${level}/${x}/${y}.png`;
     img.className = 'tile';
+    img.style.width = `${LOGICAL_TILE_SIZE}px`;
+    img.style.height = `${LOGICAL_TILE_SIZE}px`;
     img.onerror = () => { img.style.display = 'none'; };
     return img;
 }
 
 function updateLayer(level, opacity, targetTiles) {
     if (opacity <= 0.001) return;
+
+    const tileSize = LOGICAL_TILE_SIZE;
 
     const camX_C = state.camera.tileX + state.camera.offsetX;
     const camY_C = state.camera.tileY + state.camera.offsetY;
@@ -445,7 +450,7 @@ function updateLayer(level, opacity, targetTiles) {
     const camY_T = camY_C * factor;
     
     const displayScale = Math.pow(2, state.camera.level + state.camera.zoomOffset - level);
-    const tileSizeOnScreen = TILE_SIZE * displayScale;
+    const tileSizeOnScreen = tileSize * displayScale;
     
     const tilesInViewX = state.viewSize.width / tileSizeOnScreen;
     const tilesInViewY = state.viewSize.height / tileSizeOnScreen;

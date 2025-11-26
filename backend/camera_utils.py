@@ -1,7 +1,7 @@
 import math
 
-# Constants matching Frontend
-TILE_SIZE = 256
+# Logical tile size used for viewport math. Image resolution can differ.
+LOGICAL_TILE_SIZE = 256
 # We use a standard reference viewport. 
 # The frontend adapts to the window size, but for generation we must cover the *maximum expected* viewport.
 # 1920x1080 is a safe target.
@@ -76,7 +76,7 @@ def get_viewport_bounds_at_level(camera, target_level):
     cam_total_level = camera['level'] + camera['zoomOffset']
     scale = 2 ** (cam_total_level - target_level)
     
-    tile_size_on_screen = TILE_SIZE * scale
+    tile_size_on_screen = LOGICAL_TILE_SIZE * scale
     
     # Viewport dimensions in "Target Level Tiles"
     # If scale is small (zoomed out), we see many tiles.
