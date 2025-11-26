@@ -25,7 +25,8 @@ const state = {
     pathPlayback: {
         active: false,
         startTime: 0,
-        segmentDuration: 5000 // ms between keyframes
+        segmentDurations: [],
+        totalDuration: 0
     }
 };
 
@@ -125,6 +126,8 @@ function populatePathSelect() {
     } else {
         state.activePath = null;
     }
+
+    recalculatePathPlaybackTiming();
 }
 
 function resetCamera() {
@@ -156,10 +159,12 @@ function setupEventListeners() {
     // Path Controls
     els.pathSelect.addEventListener('change', (e) => {
         state.activePath = state.paths.find(p => p.id === e.target.value);
+        recalculatePathPlaybackTiming();
     });
     
     els.btnPlay.addEventListener('click', () => {
         if (state.activePath) {
+            recalculatePathPlaybackTiming();
             state.pathPlayback.active = true;
             state.pathPlayback.startTime = performance.now(); // Reset start time? 
             // For simple loop, just start.
@@ -296,26 +301,72 @@ function updateUI() {
 }
 
 // Path Playback
+const PATH_SPEED = {
+    translationUnitsPerSecond: 0.05, // Normalized world units per second
+    zoomLevelsPerSecond: 1.0, // Camera levels per second
+    minSegmentMs: 300
+};
+
+function cameraToGlobal(camera) {
+    const globalLevel = camera.level + (camera.zoomOffset || 0);
+    const factor = 1.0 / Math.pow(2, globalLevel);
+    return {
+        x: (camera.tileX + camera.offsetX) * factor,
+        y: (camera.tileY + camera.offsetY) * factor,
+        level: globalLevel
+    };
+}
+
+function segmentDurationMs(k1, k2) {
+    const g1 = cameraToGlobal(k1);
+    const g2 = cameraToGlobal(k2);
+    const translationDist = Math.hypot(g2.x - g1.x, g2.y - g1.y);
+    const translationSeconds = translationDist / PATH_SPEED.translationUnitsPerSecond;
+    const zoomDelta = Math.abs(g2.level - g1.level);
+    const zoomSeconds = zoomDelta / PATH_SPEED.zoomLevelsPerSecond;
+    return Math.max((translationSeconds + zoomSeconds) * 1000, PATH_SPEED.minSegmentMs);
+}
+
+function recalculatePathPlaybackTiming() {
+    if (!state.activePath || state.activePath.keyframes.length < 2) {
+        state.pathPlayback.segmentDurations = [];
+        state.pathPlayback.totalDuration = 0;
+        return;
+    }
+
+    const durations = [];
+    for (let i = 0; i < state.activePath.keyframes.length - 1; i++) {
+        const k1 = state.activePath.keyframes[i].camera;
+        const k2 = state.activePath.keyframes[i + 1].camera;
+        durations.push(segmentDurationMs(k1, k2));
+    }
+    state.pathPlayback.segmentDurations = durations;
+    state.pathPlayback.totalDuration = durations.reduce((a, b) => a + b, 0);
+}
+
 function updatePathPlayback(now) {
     if (!state.activePath || state.activePath.keyframes.length < 2) return;
-    
-    // Calculate total time
-    // Simple version: segmentDuration per segment
-    const numSegments = state.activePath.keyframes.length - 1;
-    const totalDuration = numSegments * state.pathPlayback.segmentDuration;
-    
+    if (!state.pathPlayback.segmentDurations.length || state.pathPlayback.totalDuration <= 0) return;
+
     let elapsed = now - state.pathPlayback.startTime;
-    
-    // Loop or stop? Let's loop
-    elapsed = elapsed % totalDuration;
-    
-    const segmentIndex = Math.floor(elapsed / state.pathPlayback.segmentDuration);
-    const segmentTime = elapsed % state.pathPlayback.segmentDuration;
-    const t = segmentTime / state.pathPlayback.segmentDuration;
-    
+    elapsed = elapsed % state.pathPlayback.totalDuration;
+
+    let segmentIndex = 0;
+    let segmentTime = elapsed;
+    for (let i = 0; i < state.pathPlayback.segmentDurations.length; i++) {
+        const segDuration = state.pathPlayback.segmentDurations[i];
+        if (segmentTime < segDuration) {
+            segmentIndex = i;
+            break;
+        }
+        segmentTime -= segDuration;
+    }
+
+    const duration = state.pathPlayback.segmentDurations[segmentIndex];
+    const t = duration > 0 ? (segmentTime / duration) : 0;
     const k1 = state.activePath.keyframes[segmentIndex].camera;
     const k2 = state.activePath.keyframes[segmentIndex + 1].camera;
-    
+
     interpolateCamera(k1, k2, t);
 }
 
