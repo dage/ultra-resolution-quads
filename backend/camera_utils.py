@@ -1,7 +1,7 @@
 import math
 
 # Logical tile size used for viewport math. Image resolution can differ.
-LOGICAL_TILE_SIZE = 256
+LOGICAL_TILE_SIZE = 512
 # We use a standard reference viewport. 
 # The frontend adapts to the window size, but for generation we must cover the *maximum expected* viewport.
 # 1920x1080 is a safe target.

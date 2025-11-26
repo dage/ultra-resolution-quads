@@ -1,6 +1,6 @@
 const BASE_DATA_URI = '..';
 // Logical tile size for layout; actual image resolution can differ.
-const LOGICAL_TILE_SIZE = 256;
+const LOGICAL_TILE_SIZE = 512;
 
 // Application State
 const state = {

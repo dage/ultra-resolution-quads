@@ -4,7 +4,7 @@ import math
 import sys
 
 # Configuration matching frontend defaults
-TILE_SIZE = 256
+TILE_SIZE = 512
 VIEWPORT_WIDTH = 1920  # Assume a large desktop monitor to catch edge cases
 VIEWPORT_HEIGHT = 1080
 
