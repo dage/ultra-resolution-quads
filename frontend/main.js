@@ -54,6 +54,7 @@ const els = {
     },
     modeRadios: document.getElementsByName('mode'),
     pathControls: document.getElementById('path-controls'),
+    btnReset: document.getElementById('btn-reset'),
     btns: {
         start: document.getElementById('btn-skip-start'),
         back: document.getElementById('btn-skip-back'),
@@ -167,6 +168,7 @@ function setupEventListeners() {
             if (e.target.checked) {
                 state.mode = e.target.value;
                 els.pathControls.style.display = state.mode === 'path' ? 'block' : 'none';
+                updateInputAvailability();
             }
         });
     });
@@ -266,7 +268,42 @@ function setupEventListeners() {
         zoom(-e.deltaY * 0.002); // Zoom factor
     }, { passive: false });
     
+    // Camera Inputs
+    els.inputs.level.addEventListener('input', (e) => { 
+        state.camera.level = parseInt(e.target.value); 
+        state.camera.zoomOffset = 0; // Reset zoom offset when manually changing level to avoid confusion
+        updateUI(); 
+    });
+    els.inputs.tileX.addEventListener('input', (e) => { state.camera.tileX = parseInt(e.target.value); updateUI(); });
+    els.inputs.tileY.addEventListener('input', (e) => { state.camera.tileY = parseInt(e.target.value); updateUI(); });
+    els.inputs.offsetX.addEventListener('input', (e) => { state.camera.offsetX = parseFloat(e.target.value); updateUI(); });
+    els.inputs.offsetY.addEventListener('input', (e) => { state.camera.offsetY = parseFloat(e.target.value); updateUI(); });
+
+    // Reset Button
+    els.btnReset.addEventListener('click', resetCamera);
+
     window.addEventListener('resize', updateViewSize);
+    
+    // Initialize input state
+    updateInputAvailability();
+    
+    // Ensure view size is updated initially
+    updateViewSize();
+}
+
+function updateInputAvailability() {
+    const disabled = state.mode === 'path';
+    els.inputs.level.disabled = disabled;
+    els.inputs.tileX.disabled = disabled;
+    els.inputs.tileY.disabled = disabled;
+    els.inputs.offsetX.disabled = disabled;
+    els.inputs.offsetY.disabled = disabled;
+    
+    // Visually indicate disabled state for ranges/inputs if standard CSS doesn't cover it enough
+    // (Browser default for disabled inputs is usually sufficient: greyed out and non-interactive)
+}
+
+function updateViewSize() {
     updateViewSize();
 }
 
@@ -359,11 +396,12 @@ function updateUI() {
     els.vals.offsetX.textContent = state.camera.offsetX.toFixed(4);
     els.vals.offsetY.textContent = state.camera.offsetY.toFixed(4);
     
-    els.inputs.level.value = state.camera.level;
-    els.inputs.tileX.value = state.camera.tileX;
-    els.inputs.tileY.value = state.camera.tileY;
-    els.inputs.offsetX.value = state.camera.offsetX;
-    els.inputs.offsetY.value = state.camera.offsetY;
+    // Only update inputs if they are not focused to allow editing without overwrite
+    if (document.activeElement !== els.inputs.level) els.inputs.level.value = state.camera.level;
+    if (document.activeElement !== els.inputs.tileX) els.inputs.tileX.value = state.camera.tileX;
+    if (document.activeElement !== els.inputs.tileY) els.inputs.tileY.value = state.camera.tileY;
+    if (document.activeElement !== els.inputs.offsetX) els.inputs.offsetX.value = state.camera.offsetX;
+    if (document.activeElement !== els.inputs.offsetY) els.inputs.offsetY.value = state.camera.offsetY;
 }
 
 // Path Playback

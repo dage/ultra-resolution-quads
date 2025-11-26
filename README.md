@@ -21,6 +21,14 @@ You will need Python 3 and the Pillow library for image generation.
 pip install Pillow
 ```
 
+### Backend Dependencies
+
+Install packages:
+
+```bash
+pip install -r requirements.txt
+```
+
 ### 2. Generate a Dataset
 
 The viewer relies on pre-generated tiles. You must run the backend generator before launching the viewer.
