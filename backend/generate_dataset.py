@@ -112,24 +112,33 @@ def save_default_paths(dataset_id, renderer_type):
     paths = []
     
     if renderer_type == 'mandelbrot':
-        # Target: A known deep zoom point (e.g., Seahorse Valley)
-        # Point: -0.7436438870371587 + 0.13182590420531197i
-        target_re = -0.7436438870371587
-        target_im = 0.13182590420531197
+        # Multi-stage deep zoom path
         
-        # Keyframe 1: Start at Level 0, CENTERED on the target.
-        # This simulates a "Pure Zoom" with no panning, which is efficient.
-        tx0, ty0, ox0, oy0 = complex_to_tile_coords(target_re, target_im, 0)
+        # 1. Start: Full View
+        tx0, ty0, ox0, oy0 = complex_to_tile_coords(-0.75, 0.0, 0)
         k1 = {"camera": {"level": 0, "tileX": tx0, "tileY": ty0, "offsetX": ox0, "offsetY": oy0, "rotation": 0}}
         
-        # Keyframe 2: Zoom to Level 20 at Target
-        tx20, ty20, ox20, oy20 = complex_to_tile_coords(target_re, target_im, 20)
-        k2 = {"camera": {"level": 20, "tileX": tx20, "tileY": ty20, "offsetX": ox20, "offsetY": oy20, "rotation": 0}}
+        # 2. Seahorse Valley Approach (Level 5)
+        # A nice overview of the valley between the head and body
+        tx1, ty1, ox1, oy1 = complex_to_tile_coords(-0.748, 0.1, 5)
+        k2 = {"camera": {"level": 5, "tileX": tx1, "tileY": ty1, "offsetX": ox1, "offsetY": oy1, "rotation": 0}}
+
+        # 3. Spiral Feature (Level 12)
+        # Diving into a specific spiral arm
+        tx2, ty2, ox2, oy2 = complex_to_tile_coords(-0.7436431, 0.1318255, 12)
+        k3 = {"camera": {"level": 12, "tileX": tx2, "tileY": ty2, "offsetX": ox2, "offsetY": oy2, "rotation": 0}}
+        
+        # 4. Deep Target (Level 20)
+        # Final destination: a mini-mandelbrot deep inside
+        target_re = -0.7436438870371587
+        target_im = 0.13182590420531197
+        tx3, ty3, ox3, oy3 = complex_to_tile_coords(target_re, target_im, 20)
+        k4 = {"camera": {"level": 20, "tileX": tx3, "tileY": ty3, "offsetX": ox3, "offsetY": oy3, "rotation": 0}}
         
         paths.append({
-            "id": "deep_zoom_seahorse",
-            "name": "Seahorse Valley Deep Zoom (L20)",
-            "keyframes": [k1, k2]
+            "id": "deep_zoom_scenic",
+            "name": "Scenic Seahorse Dive (L20)",
+            "keyframes": [k1, k2, k3, k4]
         })
 
     with open(path_file, 'w') as f:
@@ -157,7 +166,7 @@ def generate_full_pyramid(renderer, dataset_id, max_level):
 
 import camera_utils
 
-def generate_tiles_along_path(renderer, dataset_id, paths, margin=4):
+def generate_tiles_along_path(renderer, dataset_id, paths, margin=1):
     print(f"Generating tiles along paths for {dataset_id}...")
     base_path = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles')
     
@@ -209,22 +218,34 @@ def generate_tiles_along_path(renderer, dataset_id, paths, margin=4):
     # Deterministic ordering helps progress tracking and debugging
     tasks.sort(key=lambda t: (t[0], t[1], t[2]))
 
-    print(f"Rendering {len(tasks)} missing tiles with 8 workers...")
-
     if not tasks:
         print("No new tiles needed for path mode.")
         return 0
 
     generated = 0
-    try:
-        with ProcessPoolExecutor(max_workers=8, initializer=_init_renderer_worker, initargs=(renderer,)) as executor:
-            for idx, created in enumerate(executor.map(_render_tile, tasks), 1):
-                if idx % 100 == 0:
-                    print(f"Rendering {idx}/{len(tasks)}...")
-                if created:
-                    generated += 1
-    except Exception as e:
-        print(f"Parallel rendering failed ({e}); falling back to single-process mode...")
+    
+    use_multiprocessing = True
+    if hasattr(renderer, 'supports_multithreading') and not renderer.supports_multithreading():
+        use_multiprocessing = False
+        print("Renderer does not support multithreading. Switching to single-process mode.")
+
+    if use_multiprocessing:
+        print(f"Rendering {len(tasks)} missing tiles with 8 workers...")
+        try:
+            with ProcessPoolExecutor(max_workers=8, initializer=_init_renderer_worker, initargs=(renderer,)) as executor:
+                for idx, created in enumerate(executor.map(_render_tile, tasks), 1):
+                    if idx % 100 == 0:
+                        print(f"Rendering {idx}/{len(tasks)}...")
+                    if created:
+                        generated += 1
+        except Exception as e:
+            print(f"Parallel rendering failed ({e}); falling back to single-process mode...")
+            use_multiprocessing = False
+
+    if not use_multiprocessing:
+        print(f"Rendering {len(tasks)} tiles in single process...")
+        # Initialize global renderer for single process
+        _init_renderer_worker(renderer)
         for idx, task in enumerate(tasks, 1):
             created = _render_tile(task)
             if idx % 100 == 0:

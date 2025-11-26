@@ -4,6 +4,9 @@ class DebugQuadtileRenderer:
     def __init__(self, tile_size=256):
         self.tile_size = tile_size
 
+    def supports_multithreading(self):
+        return True
+
     def render(self, level, x, y):
         image = Image.new('RGB', (self.tile_size, self.tile_size), color=(240, 240, 240))
         draw = ImageDraw.Draw(image)
