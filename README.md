@@ -30,9 +30,11 @@ The viewer relies on pre-generated tiles. You must run the backend generator bef
 python backend/generate_dataset.py --dataset debug_quadtile --renderer debug --max_level 6
 ```
 
-**Generate a Mandelbrot Zoom:**
+**Generate a Mandelbrot Zoom (Path-Based Generation):**
+This uses a "path-based" generation mode to only create tiles needed for a specific deep-zoom path (e.g., Seahorse Valley), saving massive amounts of disk space compared to a full pyramid.
+
 ```bash
-python backend/generate_dataset.py --dataset mandelbrot_deep --renderer mandelbrot --max_level 10
+python backend/generate_dataset.py --dataset mandelbrot_deep --renderer mandelbrot --max_level 20 --mode path
 ```
 
 ### 3. Run the Server

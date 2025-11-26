@@ -2,7 +2,8 @@ import os
 import json
 import argparse
 import sys
-import shutil
+import math
+from PIL import Image
 
 # Add project root to path to find renderers
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -57,23 +58,77 @@ def save_config(dataset_id, name, min_level, max_level):
             "max_level": max_level
         }, f, indent=2)
 
-def save_default_paths(dataset_id):
-    path = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'paths.json')
-    # Always overwrite for now to ensure we have the latest test path
-    ensure_dirs(os.path.dirname(path))
-    with open(path, 'w') as f:
-        json.dump({
-            "paths": [
-                {
-                    "id": "default",
-                    "name": "Deep Zoom",
-                    "keyframes": [
-                        {"camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.5, "offsetY": 0.5, "rotation": 0}},
-                        {"camera": {"level": 4, "tileX": 8, "tileY": 8, "offsetX": 0.5, "offsetY": 0.5, "rotation": 0}}
-                    ]
-                }
+# Coordinate Mapping Logic (Replicated from Mandelbrot Renderer for Path Calculation)
+VIEW_CENTER_RE = -0.75
+VIEW_CENTER_IM = 0.0
+VIEW_WIDTH = 3.0
+VIEW_HEIGHT = 3.0
+
+def complex_to_tile_coords(re, im, level):
+    num_tiles = 2 ** level
+    
+    global_min_re = VIEW_CENTER_RE - VIEW_WIDTH / 2
+    global_max_im = VIEW_CENTER_IM + VIEW_HEIGHT / 2
+    
+    # fraction of view width
+    frac_x = (re - global_min_re) / VIEW_WIDTH
+    # fraction of view height (inverted Y)
+    frac_y = (global_max_im - im) / VIEW_HEIGHT
+    
+    # Total position in tile units
+    total_tile_x = frac_x * num_tiles
+    total_tile_y = frac_y * num_tiles
+    
+    tile_x = int(total_tile_x)
+    tile_y = int(total_tile_y)
+    
+    offset_x = total_tile_x - tile_x
+    offset_y = total_tile_y - tile_y
+    
+    return tile_x, tile_y, offset_x, offset_y
+
+def save_default_paths(dataset_id, renderer_type):
+    path_file = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'paths.json')
+    ensure_dirs(os.path.dirname(path_file))
+    
+    paths = []
+    
+    if renderer_type == 'mandelbrot' or renderer_type == 'debug':
+        # Target: A known deep zoom point (e.g., Seahorse Valley)
+        # Point: -0.7436438870371587 + 0.13182590420531197i
+        target_re = -0.7436438870371587
+        target_im = 0.13182590420531197
+        
+        # Keyframe 1: Start at Level 0, CENTERED on the target.
+        # This simulates a "Pure Zoom" with no panning, which is efficient.
+        tx0, ty0, ox0, oy0 = complex_to_tile_coords(target_re, target_im, 0)
+        k1 = {"camera": {"level": 0, "tileX": tx0, "tileY": ty0, "offsetX": ox0, "offsetY": oy0, "rotation": 0}}
+        
+        # Keyframe 2: Zoom to Level 20 at Target
+        tx20, ty20, ox20, oy20 = complex_to_tile_coords(target_re, target_im, 20)
+        k2 = {"camera": {"level": 20, "tileX": tx20, "tileY": ty20, "offsetX": ox20, "offsetY": oy20, "rotation": 0}}
+        
+        paths.append({
+            "id": "deep_zoom_seahorse",
+            "name": "Seahorse Valley Deep Zoom (L20)",
+            "keyframes": [k1, k2]
+        })
+
+    if renderer_type == 'debug':
+        # Default Debug Path
+        paths.append({
+            "id": "default",
+            "name": "Debug Diagonal",
+            "keyframes": [
+                {"camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.5, "offsetY": 0.5, "rotation": 0}},
+                {"camera": {"level": 4, "tileX": 8, "tileY": 8, "offsetX": 0.5, "offsetY": 0.5, "rotation": 0}}
             ]
-        }, f, indent=2)
+        })
+
+    with open(path_file, 'w') as f:
+        json.dump({"paths": paths}, f, indent=2)
+    
+    return paths
 
 def generate_full_pyramid(renderer, dataset_id, max_level):
     base_path = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles')
@@ -93,13 +148,84 @@ def generate_full_pyramid(renderer, dataset_id, max_level):
                 img_path = os.path.join(x_path, f"{y}.png")
                 img.save(img_path)
 
+import camera_utils
+
+def generate_tiles_along_path(renderer, dataset_id, paths, max_level, margin=4):
+    print(f"Generating tiles along paths for {dataset_id}...")
+    base_path = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles')
+    
+    # We need to collect all required tiles into a set to avoid duplicates
+    required_tiles = set() # (level, x, y)
+    
+    for path_obj in paths:
+        keyframes = path_obj['keyframes']
+        if len(keyframes) < 2: 
+            continue
+            
+        for i in range(len(keyframes) - 1):
+            k1 = keyframes[i]['camera']
+            k2 = keyframes[i + 1]['camera']
+            
+            l1 = k1['level']
+            l2 = k2['level']
+            
+            # Dynamic steps: Ensure we don't jump too fast.
+            # We want at least N steps per level transition.
+            level_diff = abs(l2 - l1)
+            if level_diff == 0: level_diff = 1 # minimal
+            
+            steps = int(level_diff * 200) # 200 steps per level change
+            if steps < 400: steps = 400
+            
+            for s in range(steps + 1):
+                t = s / steps
+                
+                # Use standardized interpolation logic
+                cam = camera_utils.interpolate_camera(k1, k2, t)
+                
+                # Get visible tiles for this camera state
+                # margin=4 provides safety buffer around the viewport
+                visible = camera_utils.get_visible_tiles(cam, margin=margin)
+                
+                for tile in visible:
+                    if tile[0] <= max_level:
+                        required_tiles.add(tile)
+
+    print(f"Identified {len(required_tiles)} unique tiles to generate.")
+    
+    # Generate
+    count = 0
+    for (level, x, y) in required_tiles:
+        count += 1
+        if count % 100 == 0:
+            print(f"Rendering {count}/{len(required_tiles)}...")
+            
+        level_path = os.path.join(base_path, str(level), str(x))
+        ensure_dirs(level_path)
+        img_path = os.path.join(level_path, f"{y}.png")
+        
+        if not os.path.exists(img_path):
+            img = renderer.render(level, x, y)
+            img.save(img_path)
+            
+    print("Path generation complete.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate datasets for Ultra-Resolution Quads")
     parser.add_argument('--dataset', required=True, help='Dataset ID (e.g. debug_quadtile, mandelbrot_deep)')
     parser.add_argument('--renderer', choices=['debug', 'mandelbrot'], required=True)
-    parser.add_argument('--max_level', type=int, default=4, help='Max level to generate (full pyramid)')
+    parser.add_argument('--max_level', type=int, default=4, help='Max level to generate')
+    parser.add_argument('--mode', choices=['full', 'path'], default=None, help='Generation mode (default depends on renderer)')
     
     args = parser.parse_args()
+    
+    # Defaults
+    if args.mode is None:
+        if args.renderer == 'debug':
+            args.mode = 'full'
+        else:
+            args.mode = 'path'
     
     if args.renderer == 'debug':
         renderer = DebugQuadtileRenderer()
@@ -107,16 +233,25 @@ def main():
         desc = "Debug tiles to verify coordinate system"
     elif args.renderer == 'mandelbrot':
         renderer = MandelbrotDeepZoomRenderer()
-        name = "Mandelbrot Deep"
-        desc = "Standard Mandelbrot set"
+        name = "Mandelbrot Deep Zoom"
+        desc = "Standard Mandelbrot set with deep zoom path"
     
     print(f"Initializing dataset: {args.dataset}")
     update_index(args.dataset, name, desc)
     save_config(args.dataset, name, 0, args.max_level)
-    save_default_paths(args.dataset)
     
-    print("Generating tiles...")
-    generate_full_pyramid(renderer, args.dataset, args.max_level)
+    # Generate/Save Paths
+    paths_data = save_default_paths(args.dataset, args.renderer)
+    
+    print(f"Mode: {args.mode}")
+    if args.mode == 'full':
+        print("Generating FULL pyramid (all tiles)...")
+        generate_full_pyramid(renderer, args.dataset, args.max_level)
+    else:
+        print("Generating tiles along PATH...")
+        # If mode is path, we pull the generated paths to guide the renderer
+        generate_tiles_along_path(renderer, args.dataset, paths_data, args.max_level)
+        
     print("Done.")
 
 if __name__ == "__main__":
