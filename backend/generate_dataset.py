@@ -323,14 +323,6 @@ def main():
         avg_kb = avg_size / 1024.0
         print(f"Stats: tiles_generated={generated}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={tiles_root}")
         
-    # Determine actual max level from generated tiles
-    actual_max_level = 0
-    if os.path.exists(tiles_root):
-        # subdirectories in tiles_root are level numbers
-        levels = [int(d) for d in os.listdir(tiles_root) if d.isdigit() and os.path.isdir(os.path.join(tiles_root, d))]
-        if levels:
-            actual_max_level = max(levels)
-            
     print(f"Saving config...")
     path = os.path.join(DATA_ROOT, 'datasets', args.dataset, 'config.json')
     ensure_dirs(os.path.dirname(path))
