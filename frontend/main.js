@@ -26,6 +26,7 @@ const state = {
     pathPlayback: {
         active: false,
         startTime: 0,
+        currentElapsed: 0,
         segmentDurations: [],
         totalDuration: 0
     }
@@ -36,13 +37,13 @@ const els = {
     viewer: document.getElementById('viewer'),
     layers: document.getElementById('layers-container'),
     datasetSelect: document.getElementById('dataset-select'),
-    datasetInfo: document.getElementById('dataset-info'),
     inputs: {
         level: document.getElementById('in-level'),
         tileX: document.getElementById('in-tileX'),
         tileY: document.getElementById('in-tileY'),
         offsetX: document.getElementById('in-offsetX'),
         offsetY: document.getElementById('in-offsetY'),
+        time: document.getElementById('in-time'),
     },
     vals: {
         level: document.getElementById('val-level'),
@@ -53,9 +54,13 @@ const els = {
     },
     modeRadios: document.getElementsByName('mode'),
     pathControls: document.getElementById('path-controls'),
-    pathSelect: document.getElementById('path-select'),
-    btnPlay: document.getElementById('btn-play'),
-    btnPause: document.getElementById('btn-pause')
+    btns: {
+        start: document.getElementById('btn-skip-start'),
+        back: document.getElementById('btn-skip-back'),
+        playPause: document.getElementById('btn-play-pause'),
+        fwd: document.getElementById('btn-skip-fwd'),
+        end: document.getElementById('btn-skip-end')
+    }
 };
 
 // Initialization
@@ -74,7 +79,6 @@ async function init() {
         requestAnimationFrame(renderLoop);
     } catch (e) {
         console.error("Failed to init:", e);
-        if (els.datasetInfo) els.datasetInfo.textContent = "Error loading datasets. Check console.";
     }
 }
 
@@ -94,18 +98,17 @@ async function loadDataset(id) {
         // Load Config
         const respConfig = await fetch(`${BASE_DATA_URI}/datasets/${id}/config.json`);
         state.config = await respConfig.json();
-        els.datasetInfo.textContent = state.config.name;
         
         // Load Paths
         try {
             const respPaths = await fetch(`${BASE_DATA_URI}/datasets/${id}/paths.json`);
             const pathsData = await respPaths.json();
             state.paths = pathsData.paths || [];
-            populatePathSelect();
+            autoSelectPath();
         } catch (e) {
             console.log("No paths found or error loading paths", e);
             state.paths = [];
-            populatePathSelect();
+            autoSelectPath();
         }
 
         resetCamera();
@@ -114,21 +117,32 @@ async function loadDataset(id) {
     }
 }
 
-function populatePathSelect() {
-    els.pathSelect.innerHTML = '';
-    state.paths.forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p.id;
-        opt.textContent = p.name;
-        els.pathSelect.appendChild(opt);
-    });
+function autoSelectPath() {
+    // Automatically select the first path if available
     if (state.paths.length > 0) {
         state.activePath = state.paths[0];
+        setPathControlsEnabled(true);
     } else {
         state.activePath = null;
+        setPathControlsEnabled(false);
     }
 
     recalculatePathPlaybackTiming();
+    // Reset playback state
+    state.pathPlayback.currentElapsed = 0;
+    state.pathPlayback.active = false;
+    if (els.btns.playPause) els.btns.playPause.textContent = '▶';
+    updatePathPlayback(performance.now());
+}
+
+function setPathControlsEnabled(enabled) {
+    const opacity = enabled ? 1.0 : 0.5;
+    const pointerEvents = enabled ? 'auto' : 'none';
+    
+    if (els.pathControls) {
+        els.pathControls.style.opacity = opacity;
+        els.pathControls.style.pointerEvents = pointerEvents;
+    }
 }
 
 function resetCamera() {
@@ -158,22 +172,73 @@ function setupEventListeners() {
     });
 
     // Path Controls
-    els.pathSelect.addEventListener('change', (e) => {
-        state.activePath = state.paths.find(p => p.id === e.target.value);
-        recalculatePathPlaybackTiming();
-    });
+    // els.pathSelect listener removed
     
-    els.btnPlay.addEventListener('click', () => {
-        if (state.activePath) {
-            recalculatePathPlaybackTiming();
+    // Play/Pause Toggle
+    els.btns.playPause.addEventListener('click', () => {
+        if (!state.activePath) return;
+        
+        if (state.pathPlayback.active) {
+            // Pause
+            state.pathPlayback.active = false;
+            els.btns.playPause.textContent = '▶';
+            // elapsed is already tracked in updatePathPlayback, but let's ensure it's stable
+            // No specific action needed as currentElapsed is updated in render loop or maintained
+        } else {
+            // Play
+            // If we are at the end, restart
+            if (state.pathPlayback.currentElapsed >= state.pathPlayback.totalDuration) {
+                state.pathPlayback.currentElapsed = 0;
+            }
+            
             state.pathPlayback.active = true;
-            state.pathPlayback.startTime = performance.now(); // Reset start time? 
-            // For simple loop, just start.
+            state.pathPlayback.startTime = performance.now() - state.pathPlayback.currentElapsed;
+            els.btns.playPause.textContent = '⏸';
         }
     });
-    
-    els.btnPause.addEventListener('click', () => {
+
+    // Skip Buttons
+    els.btns.start.addEventListener('click', () => {
+        state.pathPlayback.currentElapsed = 0;
+        if (state.pathPlayback.active) state.pathPlayback.startTime = performance.now();
+        updatePathPlayback(state.pathPlayback.active ? performance.now() : 0); 
+        // If paused, we need to force update with a fake 'now' that respects the 0 elapsed
+        if (!state.pathPlayback.active) forceSeek(0);
+    });
+
+    els.btns.end.addEventListener('click', () => {
+        state.pathPlayback.currentElapsed = state.pathPlayback.totalDuration;
         state.pathPlayback.active = false;
+        els.btns.playPause.textContent = '▶';
+        forceSeek(state.pathPlayback.totalDuration);
+    });
+    
+    els.btns.back.addEventListener('click', () => {
+        let t = state.pathPlayback.currentElapsed - 10000;
+        if (t < 0) t = 0;
+        state.pathPlayback.currentElapsed = t;
+        if (state.pathPlayback.active) state.pathPlayback.startTime = performance.now() - t;
+        else forceSeek(t);
+    });
+
+    els.btns.fwd.addEventListener('click', () => {
+        let t = state.pathPlayback.currentElapsed + 10000;
+        if (t > state.pathPlayback.totalDuration) t = state.pathPlayback.totalDuration;
+        state.pathPlayback.currentElapsed = t;
+        if (state.pathPlayback.active) state.pathPlayback.startTime = performance.now() - t;
+        else forceSeek(t);
+    });
+
+    // Scrubber
+    els.inputs.time.addEventListener('input', (e) => {
+        state.pathPlayback.active = false; // Pause playback on scrub
+        els.btns.playPause.textContent = '▶';
+        
+        const scrubbedFraction = parseFloat(e.target.value);
+        const scrubbedTime = state.pathPlayback.totalDuration * scrubbedFraction;
+        
+        state.pathPlayback.currentElapsed = scrubbedTime;
+        forceSeek(scrubbedTime);
     });
 
     // Mouse Interactions
@@ -201,13 +266,13 @@ function setupEventListeners() {
         zoom(-e.deltaY * 0.002); // Zoom factor
     }, { passive: false });
     
-    // UI Inputs
-    els.inputs.level.addEventListener('input', (e) => { state.camera.level = parseInt(e.target.value); updateUI(); });
-    els.inputs.tileX.addEventListener('input', (e) => { state.camera.tileX = parseInt(e.target.value); updateUI(); });
-    els.inputs.tileY.addEventListener('input', (e) => { state.camera.tileY = parseInt(e.target.value); updateUI(); });
-    
     window.addEventListener('resize', updateViewSize);
     updateViewSize();
+}
+
+// Helper to seek when paused
+function forceSeek(elapsedTime) {
+    updatePathPlaybackWithElapsed(elapsedTime);
 }
 
 function updateViewSize() {
@@ -349,18 +414,45 @@ function updatePathPlayback(now) {
     if (!state.activePath || state.activePath.keyframes.length < 2) return;
     if (!state.pathPlayback.segmentDurations.length || state.pathPlayback.totalDuration <= 0) return;
 
-    let elapsed = now - state.pathPlayback.startTime;
-    elapsed = elapsed % state.pathPlayback.totalDuration;
+    // If active, calculate elapsed from start time
+    if (state.pathPlayback.active) {
+        state.pathPlayback.currentElapsed = now - state.pathPlayback.startTime;
+        
+        // Check for end
+        if (state.pathPlayback.currentElapsed >= state.pathPlayback.totalDuration) {
+            state.pathPlayback.currentElapsed = state.pathPlayback.totalDuration;
+            state.pathPlayback.active = false;
+            els.btns.playPause.textContent = '▶';
+        }
+    }
+
+    updatePathPlaybackWithElapsed(state.pathPlayback.currentElapsed);
+}
+
+function updatePathPlaybackWithElapsed(elapsed) {
+    if (!state.activePath || state.pathPlayback.totalDuration <= 0) return;
+
+    // Clamp
+    if (elapsed < 0) elapsed = 0;
+    if (elapsed > state.pathPlayback.totalDuration) elapsed = state.pathPlayback.totalDuration;
 
     let segmentIndex = 0;
     let segmentTime = elapsed;
+    let found = false;
     for (let i = 0; i < state.pathPlayback.segmentDurations.length; i++) {
         const segDuration = state.pathPlayback.segmentDurations[i];
         if (segmentTime < segDuration) {
             segmentIndex = i;
+            found = true;
             break;
         }
         segmentTime -= segDuration;
+    }
+
+    // Handle end case strictly
+    if (!found) {
+         segmentIndex = state.pathPlayback.segmentDurations.length - 1;
+         segmentTime = state.pathPlayback.segmentDurations[segmentIndex];
     }
 
     const duration = state.pathPlayback.segmentDurations[segmentIndex];
@@ -369,6 +461,12 @@ function updatePathPlayback(now) {
     const k2 = state.activePath.keyframes[segmentIndex + 1].camera;
 
     interpolateCamera(k1, k2, t);
+    
+    // Update scrubber position
+    if (els.inputs.time && state.pathPlayback.totalDuration > 0) {
+        const currentFraction = elapsed / state.pathPlayback.totalDuration;
+        els.inputs.time.value = currentFraction.toFixed(4);
+    }
 }
 
 function interpolateCamera(k1, k2, t) {
@@ -489,7 +587,7 @@ function updateLayer(level, opacity, targetTiles) {
 }
 
 function renderLoop() {
-    if (state.mode === 'path' && state.pathPlayback.active) {
+    if (state.mode === 'path') {
         updatePathPlayback(performance.now());
     }
 

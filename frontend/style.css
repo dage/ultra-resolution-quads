@@ -107,3 +107,31 @@ button {
 button:hover {
     background: #666;
 }
+
+.playback-controls {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    margin-top: 20px; /* Increased spacing from radio buttons */
+}
+
+.icon-btn {
+    background: transparent;
+    border: 1px solid #555;
+    border-radius: 4px;
+    width: 40px;
+    height: 30px;
+    font-size: 16px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0;
+    color: #eee;
+    /* Grayscale filter removed as we use text chars now */
+}
+
+.icon-btn:hover {
+    background: #444;
+    border-color: #777;
+}

@@ -17,7 +17,6 @@
             <div class="panel">
                 <h2>Dataset</h2>
                 <select id="dataset-select"></select>
-                <div id="dataset-info"></div>
             </div>
 
             <div class="panel">
@@ -52,10 +51,14 @@
                     <label><input type="radio" name="mode" value="path"> Path Playback</label>
                 </div>
                 <div id="path-controls" style="display:none;">
-                    <select id="path-select"></select>
-                    <button id="btn-play">Play</button>
-                    <button id="btn-pause">Pause</button>
-                    <input type="range" id="in-time" min="0" max="1" step="0.01" value="0">
+                    <div class="playback-controls">
+                        <button class="icon-btn" id="btn-skip-start" title="Start">|◀</button>
+                        <button class="icon-btn" id="btn-skip-back" title="-10s">◀◀</button>
+                        <button class="icon-btn" id="btn-play-pause" title="Play/Pause">▶</button>
+                        <button class="icon-btn" id="btn-skip-fwd" title="+10s">▶▶</button>
+                        <button class="icon-btn" id="btn-skip-end" title="End">▶|</button>
+                    </div>
+                    <input type="range" id="in-time" min="0" max="1" step="0.001" value="0">
                 </div>
             </div>
         </div>
