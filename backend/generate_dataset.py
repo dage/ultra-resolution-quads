@@ -76,18 +76,6 @@ def update_index(dataset_id, name, description):
     with open(index_path, 'w') as f:
         json.dump(data, f, indent=2)
 
-def save_config(dataset_id, name, min_level, max_level, tile_size):
-    path = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'config.json')
-    ensure_dirs(os.path.dirname(path))
-    with open(path, 'w') as f:
-        json.dump({
-            "id": dataset_id,
-            "name": name,
-            "min_level": min_level,
-            "max_level": max_level,
-            "tile_size": tile_size
-        }, f, indent=2)
-
 # Coordinate Mapping Logic (Replicated from Mandelbrot Renderer for Path Calculation)
 VIEW_CENTER_RE = -0.75
 VIEW_CENTER_IM = 0.0
@@ -287,7 +275,7 @@ def main():
     
     print(f"Initializing dataset: {args.dataset}")
     update_index(args.dataset, name, desc)
-    save_config(args.dataset, name, 0, args.max_level, args.tile_size)
+    # Config is saved at the end after determining actual max_level
     
     # Generate/Save Paths
     paths_data = save_default_paths(args.dataset, args.renderer)
@@ -335,6 +323,24 @@ def main():
         avg_kb = avg_size / 1024.0
         print(f"Stats: tiles_generated={generated}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={tiles_root}")
         
+    # Determine actual max level from generated tiles
+    actual_max_level = 0
+    if os.path.exists(tiles_root):
+        # subdirectories in tiles_root are level numbers
+        levels = [int(d) for d in os.listdir(tiles_root) if d.isdigit() and os.path.isdir(os.path.join(tiles_root, d))]
+        if levels:
+            actual_max_level = max(levels)
+            
+    print(f"Saving config...")
+    path = os.path.join(DATA_ROOT, 'datasets', args.dataset, 'config.json')
+    ensure_dirs(os.path.dirname(path))
+    with open(path, 'w') as f:
+        json.dump({
+            "id": args.dataset,
+            "name": name,
+            "tile_size": args.tile_size
+        }, f, indent=2)
+
     print("Done.")
 
 if __name__ == "__main__":

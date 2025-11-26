@@ -94,7 +94,7 @@ async function loadDataset(id) {
         // Load Config
         const respConfig = await fetch(`${BASE_DATA_URI}/datasets/${id}/config.json`);
         state.config = await respConfig.json();
-        els.datasetInfo.textContent = state.config.name + " (Max Level: " + state.config.max_level + ")";
+        els.datasetInfo.textContent = state.config.name;
         
         // Load Paths
         try {
@@ -508,10 +508,8 @@ function renderLoop() {
     }
     
     // Child layer (fade in) above the current level.
-    if (state.camera.level < state.config.max_level) {
-        const childOpacity = state.camera.zoomOffset;
-        updateLayer(state.camera.level + 1, childOpacity, targetTiles);
-    }
+    const childOpacity = state.camera.zoomOffset;
+    updateLayer(state.camera.level + 1, childOpacity, targetTiles);
     
     // Reconciliation
     
