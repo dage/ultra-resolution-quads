@@ -421,8 +421,7 @@ function updateUI() {
 
 // Path Playback
 const PATH_SPEED = {
-    translationUnitsPerSecond: 0.05, // Normalized world units per second
-    zoomLevelsPerSecond: 1.0, // Camera levels per second
+    visualUnitsPerSecond: 0.5, // 1.0 = 1 zoom level or 1 screen-width per second
     minSegmentMs: 300
 };
 
@@ -437,13 +436,27 @@ function cameraToGlobal(camera) {
 }
 
 function segmentDurationMs(k1, k2) {
+    // Calculate Visual Distance between two camera states
+    const l1 = k1.level + (k1.zoomOffset || 0);
+    const l2 = k2.level + (k2.zoomOffset || 0);
+    const l_avg = (l1 + l2) / 2;
+    
+    // Scale factor at average level to convert Global Delta to Visual Delta
+    // 1 Global Unit = 2^L_avg Visual Units (Screen Widths)
+    const scale = Math.pow(2, l_avg);
+
     const g1 = cameraToGlobal(k1);
     const g2 = cameraToGlobal(k2);
-    const translationDist = Math.hypot(g2.x - g1.x, g2.y - g1.y);
-    const translationSeconds = translationDist / PATH_SPEED.translationUnitsPerSecond;
-    const zoomDelta = Math.abs(g2.level - g1.level);
-    const zoomSeconds = zoomDelta / PATH_SPEED.zoomLevelsPerSecond;
-    return Math.max((translationSeconds + zoomSeconds) * 1000, PATH_SPEED.minSegmentMs);
+    
+    const dx = (g1.x - g2.x) * scale;
+    const dy = (g1.y - g2.y) * scale;
+    const dl = Math.abs(l1 - l2);
+    
+    // Visual Distance = Hypotenuse of Pan (in screens) and Zoom (in levels)
+    const dist = Math.sqrt(dx*dx + dy*dy + dl*dl);
+    
+    const durationSeconds = dist / PATH_SPEED.visualUnitsPerSecond;
+    return Math.max(durationSeconds * 1000, PATH_SPEED.minSegmentMs);
 }
 
 function recalculatePathPlaybackTiming() {

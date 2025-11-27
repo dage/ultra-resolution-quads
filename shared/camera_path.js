@@ -10,6 +10,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 
   const MAX_LEVEL = 20;
+  const ZOOM_WEIGHT = 1.0; // Weighting for Level changes vs Pan changes
 
   // --- 1. Coordinate Math ---
 
@@ -50,19 +51,31 @@
     };
   };
 
-  const dist3 = (p1, p2) => {
-    const dx = p1.x - p2.x;
-    const dy = p1.y - p2.y;
-    const dz = p1.z - p2.z; 
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  // VISUAL DISTANCE METRIC
+  // Calculates distance in "Visual Units" (approx. screen widths) rather than Global Units.
+  // This ensures that moving 1 screen width at Level 20 takes the same time as 1 screen width at Level 0.
+  const visualDist = (p1, p2) => {
+    const l1 = p1.z * MAX_LEVEL;
+    const l2 = p2.z * MAX_LEVEL;
+    const l_avg = (l1 + l2) / 2;
+    
+    // The scale at the average level.
+    // Scale = 2^L. (Reciprocal of the world-to-viewport factor).
+    // Actually: Viewport Width in Global Units = 1 / 2^L.
+    // So 1 Global Unit = 2^L Viewport Units.
+    const scale = Math.pow(2, l_avg);
+    
+    const dx = (p1.x - p2.x) * scale;
+    const dy = (p1.y - p2.y) * scale;
+    const dl = (l1 - l2) * ZOOM_WEIGHT; 
+    
+    return Math.sqrt(dx * dx + dy * dy + dl * dl);
   };
 
   // --- 2. The Solver (Natural Cubic Spline) ---
 
   /**
    * 1D Natural Cubic Spline Interpolator
-   * Solves the tridiagonal matrix system to ensure C2 continuity 
-   * (continuous acceleration) across all knots.
    */
   class Spline1D {
     constructor(xs, ys) {
@@ -70,19 +83,16 @@
       this.ys = ys;
       const n = xs.length - 1;
       
-      // System Ax = b for natural spline moments M
       const a = new Float64Array(n);
       const b = new Float64Array(n);
       const c = new Float64Array(n);
       const r = new Float64Array(n + 1);
 
-      // Calculate step sizes h
       const h = new Float64Array(n);
       for (let i = 0; i < n; i++) {
         h[i] = xs[i + 1] - xs[i];
       }
 
-      // Build Tridiagonal Matrix
       for (let i = 1; i < n; i++) {
         a[i] = h[i - 1] / 6;
         b[i] = (h[i - 1] + h[i]) / 3;
@@ -90,11 +100,9 @@
         r[i] = (ys[i + 1] - ys[i]) / h[i] - (ys[i] - ys[i - 1]) / h[i - 1];
       }
 
-      // Thomas Algorithm (TDMA) to solve for M
       const c_prime = new Float64Array(n);
       const d_prime = new Float64Array(n);
 
-      // Forward sweep
       if (n > 0 && b[1] !== 0) {
         c_prime[1] = c[1] / b[1];
         d_prime[1] = r[1] / b[1];
@@ -106,7 +114,6 @@
         }
       }
 
-      // Back substitution
       this.m = new Array(n + 1).fill(0);
       if (n > 0) {
         for (let i = n - 1; i >= 1; i--) {
@@ -116,9 +123,8 @@
     }
 
     at(x) {
-      // Robust binary search for segment
       let i = this.xs.length - 2;
-      if (i < 0) i = 0; // Handle 2 points case where n=1, i=0
+      if (i < 0) i = 0; 
       
       let low = 0, high = this.xs.length - 2;
       while (low <= high) {
@@ -133,19 +139,16 @@
         }
       }
       
-      // Clamp for float inaccuracies
       if (x < this.xs[0]) i = 0;
       if (x > this.xs[this.xs.length - 1]) i = this.xs.length - 2;
       if (i < 0) i = 0;
 
       const h = this.xs[i + 1] - this.xs[i];
-      // Protect against division by zero if duplicate knots
       if (h === 0) return this.ys[i];
 
       const a = (this.xs[i + 1] - x) / h;
       const b = (x - this.xs[i]) / h;
 
-      // Cubic evaluation
       return a * this.ys[i] + b * this.ys[i + 1] + 
              ((a * a * a - a) * this.m[i] + (b * b * b - b) * this.m[i + 1]) * (h * h) / 6;
     }
@@ -157,11 +160,11 @@
     constructor(keyframes) {
       const points = keyframes.map(toGlobal);
       
-      // 1. Chordal Parameterization (Time = Distance between knots)
+      // 1. Parameterization using VISUAL DISTANCE
       this.keyframeTimes = [0];
       let currentTime = 0;
       for (let i = 1; i < points.length; i++) {
-        const d = dist3(points[i], points[i-1]);
+        const d = visualDist(points[i], points[i-1]);
         currentTime += d;
         this.keyframeTimes.push(currentTime);
       }
@@ -172,7 +175,7 @@
       this.splineY = new Spline1D(this.keyframeTimes, points.map(p => p.y));
       this.splineZ = new Spline1D(this.keyframeTimes, points.map(p => p.z));
 
-      // 3. Build Arc-Length LUT for constant speed
+      // 3. Build Arc-Length LUT for constant VISUAL speed
       this.buildLUT();
     }
 
@@ -180,7 +183,6 @@
       this.lut = [{ dist: 0, t: 0 }];
       this.totalLength = 0;
       
-      // High resolution sampling to prevent micro-jitters
       const STEPS = 5000; 
       let prevP = { 
         x: this.splineX.at(0), 
@@ -189,7 +191,6 @@
       };
 
       if (this.maxTime <= 1e-9) {
-        // Zero length path
         this.lut.push({ dist: 0, t: 0 });
         this.keyframeProgresses = this.keyframeTimes.map(() => 0);
         return;
@@ -203,13 +204,13 @@
           z: this.splineZ.at(t)
         };
         
-        const d = dist3(prevP, currP);
+        // Use visualDist here too so that equal LUT steps = equal visual change
+        const d = visualDist(prevP, currP);
         this.totalLength += d;
         this.lut.push({ dist: this.totalLength, t: t });
         prevP = currP;
       }
 
-      // Map keyframes to normalized progress [0,1] for UI references
       this.keyframeProgresses = this.keyframeTimes.map(kt => {
          const entry = this.lut.find(e => e.t >= kt);
          return entry && this.totalLength > 0 ? entry.dist / this.totalLength : 0;
@@ -228,7 +229,6 @@
 
       const targetDist = Math.max(0, Math.min(1, p)) * this.totalLength;
 
-      // Binary search LUT for target distance
       let low = 0, high = this.lut.length - 1, idx = 0;
       while (low <= high) {
         const mid = (low + high) >>> 1;
@@ -245,12 +245,10 @@
       const entryA = this.lut[idx - 1];
       const entryB = this.lut[idx];
       
-      // Linear interpolate t within the LUT bin
       const distGap = entryB.dist - entryA.dist;
       const ratio = distGap === 0 ? 0 : (targetDist - entryA.dist) / distGap;
       const t = entryA.t + (entryB.t - entryA.t) * ratio;
 
-      // Evaluate Splines
       const g = {
         x: this.splineX.at(t),
         y: this.splineY.at(t),
@@ -287,14 +285,12 @@
       };
     }
 
-    // Normalize input: handle objects with .camera property or direct camera objects
     const normalized = keyframes.map(k => k.camera || k);
     const sampler = new PathSampler(normalized);
 
     return {
       cameraAtProgress: (p) => sampler.getPointAtProgress(p),
       pointAtProgress: (p) => sampler.getPointAtProgress(p),
-      // Expose full sampler for debugging or advanced use
       sampler: sampler
     };
   }
