@@ -1,0 +1,14 @@
+{
+  "datasets": [
+    {
+      "id": "debug_quadtile",
+      "name": "Debug Quadtile",
+      "description": "Debug tiles to verify coordinate system"
+    },
+    {
+      "id": "mandelbrot_deep",
+      "name": "Mandelbrot Deep Zoom",
+      "description": "Standard Mandelbrot set with deep zoom path"
+    }
+  ]
+}

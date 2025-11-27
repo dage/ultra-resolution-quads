@@ -29,20 +29,12 @@ Install packages:
 pip install -r requirements.txt
 ```
 
-### 2. Generate a Dataset
+### 2. Generate Datasets
 
-The viewer relies on pre-generated tiles. You must run the backend generator before launching the viewer.
-
-**Generate a Debug Grid (fastest to test):**
-```bash
-python backend/generate_dataset.py --dataset debug_quadtile --renderer debug --max_level 6
-```
-
-**Generate a Mandelbrot Zoom (Path-Based Generation):**
-This uses a "path-based" generation mode to only create tiles needed for a specific deep-zoom path (e.g., Seahorse Valley), saving massive amounts of disk space compared to a full pyramid.
+The viewer relies on pre-generated tiles. You must run the setup script to generate the required datasets if you plan to use the examples. This script creates both a debug grid and a deep-zoom Mandelbrot set.
 
 ```bash
-python backend/generate_dataset.py --dataset mandelbrot_deep --renderer mandelbrot --max_level 20 --mode path
+python setup_datasets.py
 ```
 
 ### 3. Run the Server

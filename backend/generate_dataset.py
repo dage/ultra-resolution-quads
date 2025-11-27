@@ -110,8 +110,18 @@ def complex_to_tile_coords(re, im, level):
     
     return tile_x, tile_y, offset_x, offset_y
 
-def save_default_paths(dataset_id, renderer_type):
+def load_or_create_paths(dataset_id, renderer_type):
     path_file = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'paths.json')
+    
+    if os.path.exists(path_file):
+        print(f"Loading existing paths from {path_file}")
+        try:
+            with open(path_file, 'r') as f:
+                data = json.load(f)
+                return data.get('paths', [])
+        except Exception as e:
+            print(f"Error loading paths: {e}. Regenerating defaults.")
+
     ensure_dirs(os.path.dirname(path_file))
     
     paths = []
@@ -270,7 +280,7 @@ def main():
     # Config is saved at the end after determining actual max_level
     
     # Generate/Save Paths
-    paths_data = save_default_paths(args.dataset, args.renderer)
+    paths_data = load_or_create_paths(args.dataset, args.renderer)
     
     tiles_root = os.path.join(DATA_ROOT, 'datasets', args.dataset, 'tiles')
     # Clear previous tiles so each run is fresh
