@@ -23,6 +23,7 @@ const state = {
     // Path Playback State
     paths: [],
     activePath: null,
+    pathSampler: null,
     pathPlayback: {
         active: false,
         startTime: 0,
@@ -118,13 +119,27 @@ async function loadDataset(id) {
     }
 }
 
+function setActivePath(path) {
+    state.activePath = path || null;
+    if (!path) {
+        state.pathSampler = null;
+        return;
+    }
+    if (typeof CameraPath === 'undefined') {
+        console.error('CameraPath module not loaded');
+        state.pathSampler = null;
+        return;
+    }
+    state.pathSampler = CameraPath.buildSampler(path, { tension: 0.0, resolution: 2000 });
+}
+
 function autoSelectPath() {
     // Automatically select the first path if available
     if (state.paths.length > 0) {
-        state.activePath = state.paths[0];
+        setActivePath(state.paths[0]);
         setPathControlsEnabled(true);
     } else {
-        state.activePath = null;
+        setActivePath(null);
         setPathControlsEnabled(false);
     }
 
@@ -468,91 +483,27 @@ function updatePathPlayback(now) {
 }
 
 function updatePathPlaybackWithElapsed(elapsed) {
-    if (!state.activePath || state.pathPlayback.totalDuration <= 0) return;
+    if (!state.activePath || !state.pathSampler || state.pathPlayback.totalDuration <= 0) return;
 
-    // Clamp
-    if (elapsed < 0) elapsed = 0;
-    if (elapsed > state.pathPlayback.totalDuration) elapsed = state.pathPlayback.totalDuration;
+    const clamped = Math.min(Math.max(elapsed, 0), state.pathPlayback.totalDuration);
+    const progress = state.pathPlayback.totalDuration > 0 ? (clamped / state.pathPlayback.totalDuration) : 0;
+    const cam = state.pathSampler.cameraAtProgress(progress);
+    if (!cam) return;
 
-    let segmentIndex = 0;
-    let segmentTime = elapsed;
-    let found = false;
-    for (let i = 0; i < state.pathPlayback.segmentDurations.length; i++) {
-        const segDuration = state.pathPlayback.segmentDurations[i];
-        if (segmentTime < segDuration) {
-            segmentIndex = i;
-            found = true;
-            break;
-        }
-        segmentTime -= segDuration;
-    }
+    state.camera.level = cam.level;
+    state.camera.zoomOffset = cam.zoomOffset;
+    state.camera.tileX = cam.tileX;
+    state.camera.tileY = cam.tileY;
+    state.camera.offsetX = cam.offsetX;
+    state.camera.offsetY = cam.offsetY;
 
-    // Handle end case strictly
-    if (!found) {
-         segmentIndex = state.pathPlayback.segmentDurations.length - 1;
-         segmentTime = state.pathPlayback.segmentDurations[segmentIndex];
-    }
+    updateUI();
 
-    const duration = state.pathPlayback.segmentDurations[segmentIndex];
-    const t = duration > 0 ? (segmentTime / duration) : 0;
-    const k1 = state.activePath.keyframes[segmentIndex].camera;
-    const k2 = state.activePath.keyframes[segmentIndex + 1].camera;
-
-    interpolateCamera(k1, k2, t);
-    
     // Update scrubber position
     if (els.inputs.time && state.pathPlayback.totalDuration > 0) {
-        const currentFraction = elapsed / state.pathPlayback.totalDuration;
+        const currentFraction = clamped / state.pathPlayback.totalDuration;
         els.inputs.time.value = currentFraction.toFixed(4);
     }
-}
-
-function interpolateCamera(k1, k2, t) {
-    // Interpolate Level
-    // We interpolate "Global Level" = level + zoomOffset
-    const gl1 = k1.level + (k1.zoomOffset || 0); // k1.zoomOffset might be undefined if not in json? PRD says offsetX/Y, level.
-    // PRD json example: "level": 0, "tileX": 0... "offsetX": 0.5...
-    // Wait, PRD example doesn't show zoomOffset in keyframe.
-    // It says "camera": { "level": 0, ... }
-    // Assuming implicit zoomOffset 0 if not present? 
-    // Or maybe level is float in keyframe? PRD says "level" (integer).
-    
-    // I'll assume k1.level is integer.
-    // So Global Level L1 = k1.level.
-    // L2 = k2.level.
-    const L1 = k1.level;
-    const L2 = k2.level;
-    
-    const Lt = L1 + (L2 - L1) * t;
-    
-    state.camera.level = Math.floor(Lt);
-    state.camera.zoomOffset = Lt - state.camera.level;
-    
-    // Interpolate Position (Global Coordinates)
-    // Pos = (tile + offset) / 2^level
-    
-    const factor1 = 1.0 / Math.pow(2, L1);
-    const gx1 = (k1.tileX + k1.offsetX) * factor1;
-    const gy1 = (k1.tileY + k1.offsetY) * factor1;
-    
-    const factor2 = 1.0 / Math.pow(2, L2);
-    const gx2 = (k2.tileX + k2.offsetX) * factor2;
-    const gy2 = (k2.tileY + k2.offsetY) * factor2;
-    
-    const gxt = gx1 + (gx2 - gx1) * t;
-    const gyt = gy1 + (gy2 - gy1) * t;
-    
-    // Convert back to local
-    const factorT = Math.pow(2, state.camera.level); // Base level scale
-    const fullX = gxt * factorT;
-    const fullY = gyt * factorT;
-    
-    state.camera.tileX = Math.floor(fullX);
-    state.camera.tileY = Math.floor(fullY);
-    state.camera.offsetX = fullX % 1;
-    state.camera.offsetY = fullY % 1;
-    
-    updateUI();
 }
 
 // Rendering

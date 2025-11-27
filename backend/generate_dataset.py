@@ -21,6 +21,11 @@ _renderer_instance = None
 def ensure_dirs(path):
     os.makedirs(path, exist_ok=True)
 
+def ensure_directories(dataset_id):
+    output_dir = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles')
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
 
 def _init_renderer_worker(renderer):
     """Initializer for ProcessPool workers; shares the renderer instance via pickling."""
@@ -136,8 +141,8 @@ def save_default_paths(dataset_id, renderer_type):
         k4 = {"camera": {"level": 20, "tileX": tx3, "tileY": ty3, "offsetX": ox3, "offsetY": oy3, "rotation": 0}}
         
         paths.append({
-            "id": "deep_zoom_scenic",
-            "name": "Scenic Seahorse Dive (L20)",
+            "id": "default_path",
+            "name": "Default Path",
             "keyframes": [k1, k2, k3, k4]
         })
 
@@ -166,56 +171,34 @@ def generate_full_pyramid(renderer, dataset_id, max_level):
 
 import camera_utils
 
-def generate_tiles_along_path(renderer, dataset_id, paths, margin=1):
+def generate_tiles_along_path(renderer, dataset_id, paths, margin=1, steps=2000):
     print(f"Generating tiles along paths for {dataset_id}...")
     base_path = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles')
     
-    # We need to collect all required tiles into a set to avoid duplicates
-    required_tiles = set() # (level, x, y)
+    required_tiles = set()  # (level, x, y)
     
     for path_obj in paths:
-        keyframes = path_obj['keyframes']
-        if len(keyframes) < 2: 
+        keyframes = path_obj.get('keyframes', [])
+        if len(keyframes) < 2:
             continue
-            
-        for i in range(len(keyframes) - 1):
-            k1 = keyframes[i]['camera']
-            k2 = keyframes[i + 1]['camera']
-            
-            l1 = k1['level']
-            l2 = k2['level']
-            
-            # Dynamic steps: Ensure we don't jump too fast.
-            # We want at least N steps per level transition.
-            level_diff = abs(l2 - l1)
-            if level_diff == 0: level_diff = 1 # minimal
-            
-            steps = int(level_diff * 200) # 200 steps per level change
-            if steps < 400: steps = 400
-            
-            for s in range(steps + 1):
-                t = s / steps
-                
-                # Use standardized interpolation logic
-                cam = camera_utils.interpolate_camera(k1, k2, t)
-                
-                # Get visible tiles for this camera state
-                # margin=4 provides safety buffer around the viewport
-                visible = camera_utils.get_visible_tiles(cam, margin=margin)
-                
-                for tile in visible:
-                    required_tiles.add(tile)
+
+        progresses = [s / steps for s in range(steps + 1)]
+        camera_utils.set_camera_path(path_obj, internal_resolution=max(steps, 2000), tension=0.0)
+        cams = camera_utils.cameras_at_progresses(progresses)
+        for cam in cams:
+            if cam is None:
+                continue
+            visible = camera_utils.get_visible_tiles(cam, margin=margin)
+            required_tiles.update(visible)
 
     print(f"Identified {len(required_tiles)} unique tiles to generate.")
     
-    # Build tasks for tiles that are missing
     tasks = []
     for (level, x, y) in required_tiles:
         img_path = os.path.join(base_path, str(level), str(x), f"{y}.png")
         if not os.path.exists(img_path):
             tasks.append((level, x, y, base_path))
 
-    # Deterministic ordering helps progress tracking and debugging
     tasks.sort(key=lambda t: (t[0], t[1], t[2]))
 
     if not tasks:
@@ -244,7 +227,6 @@ def generate_tiles_along_path(renderer, dataset_id, paths, margin=1):
 
     if not use_multiprocessing:
         print(f"Rendering {len(tasks)} tiles in single process...")
-        # Initialize global renderer for single process
         _init_renderer_worker(renderer)
         for idx, task in enumerate(tasks, 1):
             created = _render_tile(task)

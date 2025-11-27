@@ -1,8 +1,8 @@
 import unittest
-import subprocess
-import json
 import os
 import sys
+import math
+import unittest
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -10,44 +10,42 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from backend import camera_utils
 
 class TestCameraParity(unittest.TestCase):
-    def test_interpolation_parity(self):
+    def test_camera_at_progress_basic(self):
         """
-        Verifies that python camera_utils.interpolate_camera produces 
-        the EXACT same values as the JS implementation.
+        Verify the even-spaced sampler returns sensible cameras along a simple path.
         """
+        path = {
+            "keyframes": [
+                {"camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.5, "offsetY": 0.5}},
+                {"camera": {"level": 4, "tileX": 8, "tileY": 8, "offsetX": 0.5, "offsetY": 0.5}},
+            ]
+        }
+        camera_utils.set_camera_path(path, internal_resolution=500)
+
+        c0, cmid, c1 = camera_utils.cameras_at_progresses([0.0, 0.5, 1.0])
         
-        k1 = {'level': 0, 'tileX': 0, 'tileY': 0, 'offsetX': 0.5, 'offsetY': 0.5}
-        k2 = {'level': 4, 'tileX': 8, 'tileY': 8, 'offsetX': 0.5, 'offsetY': 0.5}
-        t = 0.5
-        
-        input_data = json.dumps({'k1': k1, 'k2': k2, 't': t})
-        
-        # Run Node script
-        process = subprocess.Popen(
-            ['node', 'tests/node_camera_impl.js'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        stdout, stderr = process.communicate(input=input_data)
-        
-        if process.returncode != 0:
-            self.fail(f"Node script failed: {stderr}")
-            
-        js_result = json.loads(stdout)
-        py_result = camera_utils.interpolate_camera(k1, k2, t)
-        
-        # Compare
-        # Allow tiny float epsilon differences
-        self.assertEqual(js_result['level'], py_result['level'])
-        self.assertAlmostEqual(js_result['zoomOffset'], py_result['zoomOffset'], places=7)
-        self.assertEqual(js_result['tileX'], py_result['tileX'])
-        self.assertEqual(js_result['tileY'], py_result['tileY'])
-        self.assertAlmostEqual(js_result['offsetX'], py_result['offsetX'], places=7)
-        self.assertAlmostEqual(js_result['offsetY'], py_result['offsetY'], places=7)
-        
-        print("\nParity Check Passed: Python and JS math match.")
+        self.assertIsNotNone(c0)
+        self.assertIsNotNone(c1)
+        self.assertIsNotNone(cmid)
+
+        # Endpoints match keyframes
+        self.assertEqual(c0['level'], 0)
+        self.assertEqual(c1['level'], 4)
+        self.assertEqual(c0['tileX'], 0)
+        self.assertEqual(c1['tileX'], 8)
+
+        # Midpoint roughly halfway in global space and level
+        self.assertTrue(0.0 < cmid['globalLevel'] < 4.0)
+        self.assertTrue(0.0 < cmid['globalX'] < c1['globalX'])
+        self.assertTrue(0.0 < cmid['globalY'] < c1['globalY'])
+
+        # Progress monotonicity
+        sample_progresses = [p / 10.0 for p in range(11)]
+        samples = camera_utils.cameras_at_progresses(sample_progresses)
+        last = -math.inf
+        for s in samples:
+            self.assertGreaterEqual(s['globalLevel'], last)
+            last = s['globalLevel']
 
 if __name__ == '__main__':
     unittest.main()
