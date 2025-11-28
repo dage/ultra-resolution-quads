@@ -21,42 +21,41 @@ def _add_globals(cam):
     return out
 
 
-def get_viewport_bounds_at_level(camera, target_level):
-    gx = camera['globalX']
-    gy = camera['globalY']
-    target_factor = 2 ** target_level
-    cam_x_t = gx * target_factor
-    cam_y_t = gy * target_factor
-    cam_total_level = camera['level'] + camera['zoomOffset']
-    scale = 2 ** (cam_total_level - target_level)
-    tile_size_on_screen = LOGICAL_TILE_SIZE * scale
-    tiles_w = VIEWPORT_WIDTH / tile_size_on_screen
-    tiles_h = VIEWPORT_HEIGHT / tile_size_on_screen
-    min_x = cam_x_t - tiles_w / 2
-    max_x = cam_x_t + tiles_w / 2
-    min_y = cam_y_t - tiles_h / 2
-    max_y = cam_y_t + tiles_h / 2
-    return min_x, max_x, min_y, max_y
-
-
 def get_visible_tiles(camera, margin=1):
     visible = set()
     levels = [camera['level']]
     if camera['zoomOffset'] > 0.001:
         levels.append(camera['level'] + 1)
+        
+    # Fixed Radius Sampling
+    # 1920x1080 view with 512px tiles requires ~2.2 radius to cover corners.
+    # We use 3.0 to be safe and include margins.
+    RADIUS = 3.0
+    
     for lvl in levels:
         if lvl < 0:
             continue
-        min_x, max_x, min_y, max_y = get_viewport_bounds_at_level(camera, lvl)
-        tx_min = math.floor(min_x - margin)
-        tx_max = math.floor(max_x + margin)
-        ty_min = math.floor(min_y - margin)
-        ty_max = math.floor(max_y + margin)
+            
+        # Camera Center in Target Level Coordinates
         limit = 2 ** lvl
-        for x in range(tx_min, tx_max + 1):
-            for y in range(ty_min, ty_max + 1):
+        cam_x = camera['globalX'] * limit
+        cam_y = camera['globalY'] * limit
+        
+        # Scan bounding box of radius
+        min_x = math.floor(cam_x - RADIUS)
+        max_x = math.ceil(cam_x + RADIUS)
+        min_y = math.floor(cam_y - RADIUS)
+        max_y = math.ceil(cam_y + RADIUS)
+        
+        for x in range(min_x, max_x + 1):
+            for y in range(min_y, max_y + 1):
                 if 0 <= x < limit and 0 <= y < limit:
-                    visible.add((lvl, x, y))
+                    # Check distance from camera center to tile center
+                    dist = math.hypot(x + 0.5 - cam_x, y + 0.5 - cam_y)
+                    # Allow tiles where any part is within radius
+                    # Tile radius is ~0.707. So dist < RADIUS + 0.707
+                    if dist < RADIUS:
+                        visible.add((lvl, x, y))
     return visible
 
 

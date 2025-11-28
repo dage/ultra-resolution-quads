@@ -10,73 +10,123 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 
   const MAX_LEVEL = 20;
-  const ZOOM_WEIGHT = 1.0; // Weighting for Level changes vs Pan changes
+  const ZOOM_WEIGHT = 1.0; 
 
   // --- 1. Coordinate Math ---
 
   const toGlobal = (k) => {
-    const scale = 1 / Math.pow(2, k.level);
-    return {
-      x: (k.tileX + k.offsetX) * scale,
-      y: (k.tileY + k.offsetY) * scale,
-      z: k.level / MAX_LEVEL,
-    };
+    // Standard Global (0..1) + Level
+    const limit = Math.pow(2, k.level);
+    const gx = (k.tileX + k.offsetX) / limit;
+    const gy = (k.tileY + k.offsetY) / limit;
+    const totalLevel = k.level + (k.zoomOffset || 0);
+    
+    return { x: gx, y: gy, level: totalLevel };
   };
 
   const fromGlobal = (g) => {
-    const level = g.z * MAX_LEVEL;
-    const integerLevel = Math.floor(level);
-    const scale = Math.pow(2, integerLevel);
+    const integerLevel = Math.floor(g.level);
+    const limit = Math.pow(2, integerLevel);
     
-    const absoluteX = g.x * scale;
-    const absoluteY = g.y * scale;
+    const absoluteX = g.x * limit;
+    const absoluteY = g.y * limit;
 
     const tileX = Math.floor(absoluteX);
     const tileY = Math.floor(absoluteY);
 
-    // Ensure we don't return negative offsets due to precision
-    let offsetX = absoluteX - tileX;
-    let offsetY = absoluteY - tileY;
-    
     return {
       level: integerLevel,
       tileX: tileX,
       tileY: tileY,
-      offsetX: offsetX,
-      offsetY: offsetY,
+      offsetX: absoluteX - tileX,
+      offsetY: absoluteY - tileY,
       globalX: g.x,
       globalY: g.y,
-      globalLevel: level,
-      zoomOffset: level - integerLevel
+      globalLevel: g.level,
+      zoomOffset: g.level - integerLevel
     };
   };
 
-  // VISUAL DISTANCE METRIC
-  // Calculates distance in "Visual Units" (approx. screen widths) rather than Global Units.
-  // This ensures that moving 1 screen width at Level 20 takes the same time as 1 screen width at Level 0.
   const visualDist = (p1, p2) => {
-    const l1 = p1.z * MAX_LEVEL;
-    const l2 = p2.z * MAX_LEVEL;
-    const l_avg = (l1 + l2) / 2;
-    
-    // The scale at the average level.
-    // Scale = 2^L. (Reciprocal of the world-to-viewport factor).
-    // Actually: Viewport Width in Global Units = 1 / 2^L.
-    // So 1 Global Unit = 2^L Viewport Units.
+    const l_avg = (p1.level + p2.level) / 2;
     const scale = Math.pow(2, l_avg);
     
     const dx = (p1.x - p2.x) * scale;
     const dy = (p1.y - p2.y) * scale;
-    const dl = (l1 - l2) * ZOOM_WEIGHT; 
+    const dl = (p1.level - p2.level) * ZOOM_WEIGHT; 
     
     return Math.sqrt(dx * dx + dy * dy + dl * dl);
   };
 
-  // --- 2. The Solver (Natural Cubic Spline) ---
+  // --- 2. Densification (The Fix) ---
+  
+  function densifyPath(keyframes) {
+      if (keyframes.length < 2) return keyframes;
+      
+      const dense = [];
+      
+      for (let i = 0; i < keyframes.length - 1; i++) {
+          const k1 = keyframes[i];
+          const k2 = keyframes[i+1];
+          
+          const p1 = toGlobal(k1);
+          const p2 = toGlobal(k2);
+          
+          const w1 = Math.pow(2, p1.level);
+          const w2 = Math.pow(2, p2.level);
+          
+          // Calculate steps based on Level difference (at least 20 per level, min 50)
+          const dl = Math.abs(p1.level - p2.level);
+          
+          // OPTIMIZATION: For pure panning or shallow zooms, skip densification.
+          // This allows the Natural Cubic Spline to curve smoothly around corners (C2 continuity),
+          // preserving the "fly-through" feel for exploration paths.
+          // For deep zooms (dl >= 4.0), we densify to enforce the "Target Lock" geometry.
+          if (dl < 4.0) {
+              dense.push(keyframes[i]);
+              continue;
+          }
 
-  /**
-   * 1D Natural Cubic Spline Interpolator
-   */
+          const steps = Math.max(50, Math.ceil(dl * 20));
+          
+          for (let s = 0; s < steps; s++) {
+              const t = s / steps;
+              
+              // Linear Interpolation of Level (Visual Speed)
+              const l_t = p1.level + t * (p2.level - p1.level);
+              const w_t = Math.pow(2, l_t);
+              
+              // Projective Interpolation of Position (Geometry)
+              let alpha;
+              if (Math.abs(w2 - w1) < 1e-9) {
+                  alpha = t; // Pan only
+              } else {
+                  alpha = (w_t - w1) / (w2 - w1);
+              }
+              
+              const h1x = p1.x * w1;
+              const h1y = p1.y * w1;
+              
+              const h2x = p2.x * w2;
+              const h2y = p2.y * w2;
+              
+              const htx = h1x * (1 - alpha) + h2x * alpha;
+              const hty = h1y * (1 - alpha) + h2y * alpha;
+              const htw = w1 * (1 - alpha) + w2 * alpha;
+              
+              // Project back
+              const gx_t = htx / htw;
+              const gy_t = hty / htw;
+              
+              dense.push(fromGlobal({ x: gx_t, y: gy_t, level: l_t }));
+          }
+      }
+      dense.push(keyframes[keyframes.length - 1]);
+      return dense;
+  }
+
+  // --- 3. Splines & Sampler (Standard Cartesian) ---
+
   class Spline1D {
     constructor(xs, ys) {
       this.xs = xs;
@@ -125,20 +175,17 @@
     at(x) {
       let i = this.xs.length - 2;
       if (i < 0) i = 0; 
-      
       let low = 0, high = this.xs.length - 2;
       while (low <= high) {
         const mid = (low + high) >>> 1;
         if (this.xs[mid] <= x && x <= this.xs[mid+1]) {
-            i = mid;
-            break;
+            i = mid; break;
         } else if (this.xs[mid] > x) {
             high = mid - 1;
         } else {
             low = mid + 1;
         }
       }
-      
       if (x < this.xs[0]) i = 0;
       if (x > this.xs[this.xs.length - 1]) i = this.xs.length - 2;
       if (i < 0) i = 0;
@@ -154,13 +201,10 @@
     }
   }
 
-  // --- 3. The Sampler (Orchestrator) ---
-
   class PathSampler {
     constructor(keyframes) {
       const points = keyframes.map(toGlobal);
       
-      // 1. Parameterization using VISUAL DISTANCE
       this.keyframeTimes = [0];
       let currentTime = 0;
       for (let i = 1; i < points.length; i++) {
@@ -170,24 +214,21 @@
       }
       this.maxTime = currentTime;
 
-      // 2. Build Natural Splines
       this.splineX = new Spline1D(this.keyframeTimes, points.map(p => p.x));
       this.splineY = new Spline1D(this.keyframeTimes, points.map(p => p.y));
-      this.splineZ = new Spline1D(this.keyframeTimes, points.map(p => p.z));
+      this.splineL = new Spline1D(this.keyframeTimes, points.map(p => p.level));
 
-      // 3. Build Arc-Length LUT for constant VISUAL speed
       this.buildLUT();
     }
 
     buildLUT() {
       this.lut = [{ dist: 0, t: 0 }];
       this.totalLength = 0;
-      
       const STEPS = 5000; 
       let prevP = { 
         x: this.splineX.at(0), 
         y: this.splineY.at(0), 
-        z: this.splineZ.at(0) 
+        level: this.splineL.at(0) 
       };
 
       if (this.maxTime <= 1e-9) {
@@ -201,10 +242,9 @@
         const currP = {
           x: this.splineX.at(t),
           y: this.splineY.at(t),
-          z: this.splineZ.at(t)
+          level: this.splineL.at(t)
         };
         
-        // Use visualDist here too so that equal LUT steps = equal visual change
         const d = visualDist(prevP, currP);
         this.totalLength += d;
         this.lut.push({ dist: this.totalLength, t: t });
@@ -222,7 +262,7 @@
           const g = {
             x: this.splineX.at(0),
             y: this.splineY.at(0),
-            z: this.splineZ.at(0)
+            level: this.splineL.at(0)
           };
           return fromGlobal(g);
       }
@@ -252,40 +292,28 @@
       const g = {
         x: this.splineX.at(t),
         y: this.splineY.at(t),
-        z: this.splineZ.at(t)
+        level: this.splineL.at(t)
       };
 
       return fromGlobal(g);
     }
-
-    getKeyframeIndexForProgress(p) {
-      let bestIdx = 0;
-      let minDiff = 1000;
-      this.keyframeProgresses.forEach((kp, i) => {
-        const diff = Math.abs(kp - p);
-        if (diff < minDiff) {
-          minDiff = diff;
-          bestIdx = i;
-        }
-      });
-      return bestIdx; // Return 0-based index
-    }
   }
-
-  // --- Export Wrapper ---
 
   function buildSampler(path, opts = {}) {
     const keyframes = path.keyframes || [];
-    
     if (keyframes.length < 2) {
-      const k = keyframes[0] ? (keyframes[0].camera || keyframes[0]) : null;
-      return {
-        cameraAtProgress: () => k,
-        pointAtProgress: () => k
-      };
+        const k = keyframes[0] ? (keyframes[0].camera || keyframes[0]) : null;
+        return { cameraAtProgress: () => k, pointAtProgress: () => k };
     }
 
-    const normalized = keyframes.map(k => k.camera || k);
+    let normalized = keyframes.map(k => {
+        const cam = k.camera || k;
+        return { ...cam };
+    });
+
+    // Densify to fix geometry and speed
+    normalized = densifyPath(normalized);
+
     const sampler = new PathSampler(normalized);
 
     return {

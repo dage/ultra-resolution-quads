@@ -421,9 +421,12 @@ function updateUI() {
 
 // Path Playback
 const PATH_SPEED = {
-    visualUnitsPerSecond: 0.5, // 1.0 = 1 zoom level or 1 screen-width per second
+    visualUnitsPerSecond: 2.0, // Increased by 4x from 0.5
     minSegmentMs: 300
 };
+
+let lastSpeedLogTime = 0; // For debug logging
+let prevCameraStateForLog = null; // For instantaneous speed calculation
 
 function cameraToGlobal(camera) {
     const globalLevel = camera.level + (camera.zoomOffset || 0);
@@ -493,6 +496,44 @@ function updatePathPlayback(now) {
     }
 
     updatePathPlaybackWithElapsed(state.pathPlayback.currentElapsed);
+
+    // Speed Logging
+    if (state.pathPlayback.active && now - lastSpeedLogTime > 1000) { // Log approximately every second when active
+        if (prevCameraStateForLog) {
+            const currentProgress = state.pathPlayback.currentElapsed / state.pathPlayback.totalDuration;
+            // Get previous progress for accurate dt
+            const prevElapsed = Math.max(0, state.pathPlayback.currentElapsed - (now - lastSpeedLogTime));
+            const prevProgress = prevElapsed / state.pathPlayback.totalDuration;
+
+            const camCurrent = state.pathSampler.cameraAtProgress(currentProgress);
+            const camPrev = state.pathSampler.cameraAtProgress(prevProgress);
+
+            if (camCurrent && camPrev) {
+                const l1 = camPrev.globalLevel;
+                const l2 = camCurrent.globalLevel;
+                const l_avg = (l1 + l2) / 2;
+                const scale = Math.pow(2, l_avg);
+
+                const dx = (camCurrent.globalX - camPrev.globalX) * scale;
+                const dy = (camCurrent.globalY - camPrev.globalY) * scale;
+                const dl = l2 - l1;
+
+                const dt_ms = now - lastSpeedLogTime;
+                // Convert to units per second (visual units or levels)
+                const inst_visual_speed = Math.sqrt(dx*dx + dy*dy + dl*dl) / (dt_ms / 1000);
+                const inst_level_speed = dl / (dt_ms / 1000);
+                
+                console.log(`[Playback Speed] Lvl=${camCurrent.globalLevel.toFixed(2)} | Visual=${inst_visual_speed.toFixed(2)} unit/s | Level=${inst_level_speed.toFixed(2)} lvl/s`);
+            }
+        }
+        lastSpeedLogTime = now;
+        // Capture a snapshot of the current camera state, including global values
+        prevCameraStateForLog = { 
+            globalLevel: state.camera.level + state.camera.zoomOffset, 
+            globalX: (state.camera.tileX + state.camera.offsetX) / Math.pow(2, state.camera.level),
+            globalY: (state.camera.tileY + state.camera.offsetY) / Math.pow(2, state.camera.level)
+        };
+    }
 }
 
 function updatePathPlaybackWithElapsed(elapsed) {

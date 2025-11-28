@@ -37,6 +37,8 @@ The viewer relies on pre-generated tiles. You must run the setup script to gener
 python setup_datasets.py
 ```
 
+Note: Generated tiles in `datasets/` are git-ignored to keep the repository light. The `paths.json` and `config.json` files are tracked to ensure reproducible experiences.
+
 ### 3. Run the Server
 
 Start a simple static HTTP server in the project root:
@@ -64,6 +66,15 @@ The project includes a test suite for the frontend logic (simulating a browser e
 node tests/test_frontend.js
 ```
 
+## Analysis Tools
+
+### Camera Path Analysis
+You can analyze the continuity and speed of a camera path using the plotting script. This generates a 9-panel chart showing position, velocity, and acceleration.
+
+```bash
+python scripts/plot_camera_path.py datasets/mandelbrot_deep/paths.json --output artifacts/analysis.png
+```
+
 ## Project Structure
 
 - **`backend/`**: Contains `generate_dataset.py` and storage management logic.
@@ -73,6 +84,7 @@ node tests/test_frontend.js
 - **`renderers/`**: Python modules that define how tiles are drawn.
 - **`tests/`**: Automated test scripts.
 - **`artifacts/`**: Temporary folder for logs, screenshots, and scratch files (git-ignored).
+- **`scripts/`**: Utility scripts for analysis and maintenance.
 - **`PRD.md`**: Project Requirements Document explaining the core architecture.
 
 ## Architecture Note

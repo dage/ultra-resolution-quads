@@ -2,7 +2,7 @@
   "paths": [
     {
       "id": "default_path",
-      "name": "Default Path",
+      "name": "Shortened Path",
       "keyframes": [
         {
           "camera": {
@@ -11,26 +11,6 @@
             "tileY": 0,
             "offsetX": 0.5,
             "offsetY": 0.5,
-            "rotation": 0
-          }
-        },
-        {
-          "camera": {
-            "level": 5,
-            "tileX": 16,
-            "tileY": 14,
-            "offsetX": 0.021333333333334537,
-            "offsetY": 0.9333333333333318,
-            "rotation": 0
-          }
-        },
-        {
-          "camera": {
-            "level": 12,
-            "tileX": 2056,
-            "tileY": 1868,
-            "offsetX": 0.6792874666666648,
-            "offsetY": 0.014250666666839606,
             "rotation": 0
           }
         },
