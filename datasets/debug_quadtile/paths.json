@@ -8,26 +8,21 @@
         { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 1.0} },
         { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 1.0} },
 
-        { "camera": {"level": 1, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
-        { "camera": {"level": 1, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 0.0} },
-        { "camera": {"level": 1, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 1.0} },
-        { "camera": {"level": 1, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 1.0} },
-
-        { "camera": {"level": 2, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
-        { "camera": {"level": 2, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 0.0} },
-        { "camera": {"level": 2, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 1.0} },
-        { "camera": {"level": 2, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 1.0} },
-
-        { "camera": {"level": 3, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
-        { "camera": {"level": 3, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 0.0} },
-        { "camera": {"level": 3, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 1.0} },
-        { "camera": {"level": 3, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 1.0} },
-
+        { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
+        
         { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
         { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 0.0} },
         { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 1.0} },
-        { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 1.0} }
-      ]
+        { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 1.0} },
+
+        { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
+
+        { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
+        { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 0.0} },
+        { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 1.0} },
+        { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 1.0} },
+        { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} }
+       ]
     }
   ]
 }
