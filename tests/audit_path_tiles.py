@@ -1,24 +1,29 @@
+"""
+Audit required tiles along a path by simulating viewport coverage at high resolution.
+Intended for sanity-checking datasets after generation; skips cleanly if data is missing.
+"""
+
 import os
 import json
 import math
 import sys
+import argparse
 
 # Configuration matching frontend defaults
 TILE_SIZE = 512
 VIEWPORT_WIDTH = 1920  # Assume a large desktop monitor to catch edge cases
 VIEWPORT_HEIGHT = 1080
 
-DATASET_ID = 'debug_deep_test'
 DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-DATASET_PATH = os.path.join(DATA_ROOT, 'datasets', DATASET_ID)
-TILES_PATH = os.path.join(DATASET_PATH, 'tiles')
 
-def load_path():
-    with open(os.path.join(DATASET_PATH, 'paths.json'), 'r') as f:
+def load_path(dataset_path, path_id):
+    path_file = os.path.join(dataset_path, 'paths.json')
+    if not os.path.exists(path_file):
+        return None
+    with open(path_file, 'r') as f:
         data = json.load(f)
-        # Find the seahorse zoom path
-        for p in data['paths']:
-            if p['id'] == 'deep_zoom_seahorse':
+        for p in data.get('paths', []):
+            if path_id is None or p.get('id') == path_id:
                 return p
     return None
 
@@ -88,10 +93,22 @@ def get_visible_tiles(camera):
     return visible
 
 def main():
-    path_obj = load_path()
+    parser = argparse.ArgumentParser(description="Audit required tiles along a path.")
+    parser.add_argument("--dataset", default="debug_quadtile", help="Dataset ID under datasets/")
+    parser.add_argument("--path-id", default=None, help="Path id to audit (default: first path)")
+    args = parser.parse_args()
+
+    dataset_path = os.path.join(DATA_ROOT, 'datasets', args.dataset)
+    tiles_path = os.path.join(dataset_path, 'tiles')
+
+    if not os.path.exists(dataset_path):
+        print(f"[skip] dataset not found: {dataset_path}")
+        sys.exit(0)
+
+    path_obj = load_path(dataset_path, args.path_id)
     if not path_obj:
-        print("Path not found!")
-        sys.exit(1)
+        print(f"[skip] path not found in {dataset_path}")
+        sys.exit(0)
         
     keyframes = path_obj['keyframes']
     print(f"Auditing path: {path_obj['name']} ({len(keyframes)} keyframes)")
@@ -122,7 +139,7 @@ def main():
                     continue
                 
                 level, x, y = tile
-                path = os.path.join(TILES_PATH, str(level), str(x), f"{y}.png")
+                path = os.path.join(tiles_path, str(level), str(x), f"{y}.png")
                 
                 if not os.path.exists(path):
                     missing_tiles.add(tile)

@@ -60,7 +60,11 @@ Open **[http://localhost:8000/frontend/index.html](http://localhost:8000/fronten
 
 ## Testing
 
-The project includes a test suite for the frontend logic (simulating a browser environment using Node.js).
+You can run all automated checks with a single helper script:
+
+```bash
+tests/run_all_tests.sh
+```
 
 ```bash
 node tests/test_frontend.js

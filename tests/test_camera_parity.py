@@ -1,8 +1,12 @@
+"""
+Parity tests for camera sampling and macro resolution across Python/JS shared logic.
+Ensures global coordinates and macros produce consistent camera outputs.
+"""
+
 import unittest
 import os
 import sys
 import math
-import unittest
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

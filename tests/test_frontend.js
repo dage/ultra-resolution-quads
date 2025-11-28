@@ -1,15 +1,6 @@
 /**
- * test_frontend.js
- * 
- * This script executes the frontend core logic (main.js) in a Node.js sandbox to verify
- * camera mechanics, zoom logic, and rendering reconciliation without a browser.
- * 
- * Usage:
- *   node tests/test_frontend.js
- * 
- * Requirements:
- *   - Node.js
- *   - frontend/main.js must exist in the relative path expected by the loader.
+ * Frontend logic smoke test executed in a Node.js sandbox (no browser).
+ * Verifies zoom math, layer reconciliation, and DOM reuse for tiles.
  */
 
 const fs = require('fs');
