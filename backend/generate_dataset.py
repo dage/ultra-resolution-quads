@@ -210,7 +210,7 @@ def generate_tiles_along_path(renderer, dataset_id, paths, margin=1, steps=2000)
 def main():
     parser = argparse.ArgumentParser(description="Generate datasets for Ultra-Resolution Quads")
     parser.add_argument('--dataset', required=True, help='Dataset ID (e.g. debug_quadtile, mandelbrot_deep)')
-    parser.add_argument('--renderer', required=True, help='Renderer class path, e.g. renderers.mandelbrot_renderer:MandelbrotDeepZoomRenderer')
+    parser.add_argument('--renderer', required=False, default=None, help='Renderer class path, e.g. renderers.mandelbrot_renderer:MandelbrotDeepZoomRenderer. If omitted, reads from datasets/{id}/config.json renderer field.')
     parser.add_argument('--renderer_args', default="{}", help='JSON dict of kwargs passed to the renderer constructor')
     parser.add_argument('--name', default=None, help='Dataset display name (defaults to dataset id)')
     parser.add_argument('--description', default="", help='Dataset description')
@@ -228,7 +228,18 @@ def main():
     if renderer_kwargs is not None and not isinstance(renderer_kwargs, dict):
         raise SystemExit("--renderer_args must decode to a JSON object (dictionary).")
 
-    renderer = load_renderer(args.renderer, args.tile_size, renderer_kwargs)
+    # Load dataset config to default renderer if not supplied
+    config_path = os.path.join(DATA_ROOT, 'datasets', args.dataset, 'config.json')
+    dataset_config = {}
+    if os.path.exists(config_path):
+        with open(config_path, 'r') as f:
+            dataset_config = json.load(f)
+
+    renderer_path = args.renderer or dataset_config.get('renderer')
+    if not renderer_path:
+        raise ValueError("Renderer must be provided via --renderer or datasets/{id}/config.json 'renderer'.")
+
+    renderer = load_renderer(renderer_path, args.tile_size, renderer_kwargs)
 
     config_path = os.path.join(DATA_ROOT, 'datasets', args.dataset, 'config.json')
     existing_name = None
@@ -297,12 +308,16 @@ def main():
     print(f"Saving config...")
     path = os.path.join(DATA_ROOT, 'datasets', args.dataset, 'config.json')
     ensure_dirs(os.path.dirname(path))
+    # Preserve existing config fields; update id/name/tile_size and keep renderer
+    final_config = dict(dataset_config or {})
+    final_config['id'] = args.dataset
+    final_config['name'] = name
+    final_config['tile_size'] = args.tile_size
+    # If renderer was provided explicitly, persist it; otherwise keep existing
+    if renderer_path:
+        final_config['renderer'] = renderer_path
     with open(path, 'w') as f:
-        json.dump({
-            "id": args.dataset,
-            "name": name,
-            "tile_size": args.tile_size
-        }, f, indent=2)
+        json.dump(final_config, f, indent=2)
 
     print("Done.")
 

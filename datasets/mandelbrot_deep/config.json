@@ -1,5 +1,6 @@
 {
   "id": "mandelbrot_deep",
   "name": "Mandelbrot Deep Zoom",
-  "tile_size": 512
+  "tile_size": 1024,
+  "renderer": "renderers.mandelbrot_renderer:MandelbrotDeepZoomRenderer"
 }

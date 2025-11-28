@@ -75,6 +75,29 @@ You can analyze the continuity and speed of a camera path using the plotting scr
 python scripts/plot_camera_path.py datasets/mandelbrot_deep/paths.json --output artifacts/analysis.png
 ```
 
+## Path Macros
+
+Camera keyframes in `datasets/*/paths.json` can use small macros that are expanded by `shared/camera_path.js` (shared by frontend and backend):
+
+- `macro: "global"` (or just provide `globalX/globalY`): supply `level`, `globalX`, and `globalY` in `[0,1]` to combine `tileX` and `offsetX`/`offsetY` into single doubles. This is easiest for the top ~30–40 levels where double precision is plenty.
+- `macro: "mandelbrot"` (aliases: `mandelbrot_point`, `mb`): supply `level`, `re`, and `im` for a point in the Mandelbrot set. Uses the renderer bounds centered at `-0.75 + 0i` with a width/height of `3.0`.
+
+Example:
+
+```json
+{
+  "paths": [
+    {
+      "id": "macro_demo",
+      "keyframes": [
+        { "camera": { "macro": "global", "level": 10, "globalX": 0.375, "globalY": 0.52 } },
+        { "camera": { "macro": "mandelbrot", "level": 14, "re": -0.743643887, "im": 0.131825904 } }
+      ]
+    }
+  ]
+}
+```
+
 ## Project Structure
 
 - **`backend/`**: Contains `generate_dataset.py` and storage management logic.

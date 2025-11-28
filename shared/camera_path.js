@@ -47,6 +47,63 @@
     };
   };
 
+  // --- 0. Path Macros ---
+  const clamp01 = (v) => Math.min(1, Math.max(0, v));
+
+  const resolveGlobalMacro = (cam) => {
+    if (typeof cam.globalX !== 'number' || typeof cam.globalY !== 'number') {
+      return null;
+    }
+    const level = cam.level || 0;
+    const zoomOffset = cam.zoomOffset || 0;
+    const g = fromGlobal({
+      x: clamp01(cam.globalX),
+      y: clamp01(cam.globalY),
+      level: level + zoomOffset
+    });
+    return { ...cam, ...g, macro: undefined };
+  };
+
+  const MANDELBROT_BOUNDS = {
+    centerRe: -0.75,
+    centerIm: 0.0,
+    width: 3.0,
+    height: 3.0
+  };
+
+  const resolveMandelbrotMacro = (cam) => {
+    if (typeof cam.re !== 'number' || typeof cam.im !== 'number') {
+      return null;
+    }
+    const { centerRe, centerIm, width, height } = MANDELBROT_BOUNDS;
+    const minRe = centerRe - width / 2;
+    const maxIm = centerIm + height / 2;
+    const gx = clamp01((cam.re - minRe) / width);
+    const gy = clamp01((maxIm - cam.im) / height); // invert because tileY grows downward
+    const level = cam.level || 0;
+    const zoomOffset = cam.zoomOffset || 0;
+    const g = fromGlobal({
+      x: gx,
+      y: gy,
+      level: level + zoomOffset
+    });
+    return { ...cam, ...g, macro: undefined };
+  };
+
+  const resolveCameraMacros = (cam) => {
+    if (!cam || typeof cam !== 'object') return cam;
+    const macro = cam.macro;
+    if (macro === 'global' || (cam.globalX !== undefined && cam.globalY !== undefined)) {
+      const res = resolveGlobalMacro(cam);
+      if (res) return res;
+    }
+    if (macro === 'mandelbrot' || macro === 'mandelbrot_point' || macro === 'mb') {
+      const res = resolveMandelbrotMacro(cam);
+      if (res) return res;
+    }
+    return cam;
+  };
+
   const visualDist = (p1, p2) => {
     const l_avg = (p1.level + p2.level) / 2;
     const scale = Math.pow(2, l_avg);
@@ -301,15 +358,17 @@
 
   function buildSampler(path, opts = {}) {
     const keyframes = path.keyframes || [];
-    if (keyframes.length < 2) {
-        const k = keyframes[0] ? (keyframes[0].camera || keyframes[0]) : null;
-        return { cameraAtProgress: () => k, pointAtProgress: () => k };
-    }
-
     let normalized = keyframes.map(k => {
         const cam = k.camera || k;
-        return { ...cam };
+        const resolved = resolveCameraMacros(cam);
+        const { macro, ...rest } = resolved || {};
+        return { ...rest };
     });
+
+    if (normalized.length < 2) {
+        const k = normalized[0] || null;
+        return { cameraAtProgress: () => k, pointAtProgress: () => k };
+    }
 
     // Densify to fix geometry and speed
     normalized = densifyPath(normalized);
@@ -323,5 +382,16 @@
     };
   }
 
-  return { buildSampler };
+  function resolvePathMacros(path) {
+    if (!path || !Array.isArray(path.keyframes)) return path;
+    const keyframes = path.keyframes.map(kf => {
+      const cam = kf.camera || kf;
+      const resolved = resolveCameraMacros(cam);
+      const { macro, ...rest } = resolved || {};
+      return { ...kf, camera: { ...rest } };
+    });
+    return { ...path, keyframes };
+  }
+
+  return { buildSampler, resolvePathMacros };
 });

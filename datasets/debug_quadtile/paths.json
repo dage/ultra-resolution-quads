@@ -4,13 +4,13 @@
       "name": "Debug Square Spiral",
       "keyframes": [
         { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
-        { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 0.0} },
+        { "camera": {"macro": "global", "level": 0, "globalX": 1.0, "globalY": 0.0, "note": "same as tileX=0,offsetX=1.0"} },
         { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 1.0} },
         { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 1.0} },
 
         { "camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
         
-        { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 0.0} },
+        { "camera": {"macro": "global", "level": 4, "globalX": 0.0, "globalY": 0.0, "note": "macro/global parity check at level 4"} },
         { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 0.0} },
         { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 1.0, "offsetY": 1.0} },
         { "camera": {"level": 4, "tileX": 0, "tileY": 0, "offsetX": 0.0, "offsetY": 1.0} },

@@ -120,8 +120,12 @@ async function loadDataset(id) {
 }
 
 function setActivePath(path) {
-    state.activePath = path || null;
-    if (!path) {
+    const resolved = (typeof CameraPath !== 'undefined' && CameraPath.resolvePathMacros)
+        ? CameraPath.resolvePathMacros(path || {})
+        : (path || null);
+
+    state.activePath = resolved;
+    if (!resolved) {
         state.pathSampler = null;
         return;
     }
@@ -130,7 +134,7 @@ function setActivePath(path) {
         state.pathSampler = null;
         return;
     }
-    state.pathSampler = CameraPath.buildSampler(path, { tension: 0.0, resolution: 2000 });
+    state.pathSampler = CameraPath.buildSampler(resolved, { tension: 0.0, resolution: 2000 });
 }
 
 function autoSelectPath() {
