@@ -1,18 +1,18 @@
-import os
-import json
 import argparse
-import sys
-import math
-import time
+import importlib
+import inspect
+import json
+import os
 import shutil
+import sys
+import time
 from concurrent.futures import ProcessPoolExecutor
-from PIL import Image
+from typing import Any, Dict
 
 # Add project root to path to find renderers
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from renderers.debug_renderer import DebugQuadtileRenderer
-from renderers.mandelbrot_renderer import MandelbrotDeepZoomRenderer
+import camera_utils
 
 DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -20,12 +20,6 @@ _renderer_instance = None
 
 def ensure_dirs(path):
     os.makedirs(path, exist_ok=True)
-
-def ensure_directories(dataset_id):
-    output_dir = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles')
-    os.makedirs(output_dir, exist_ok=True)
-    return output_dir
-
 
 def _init_renderer_worker(renderer):
     """Initializer for ProcessPool workers; shares the renderer instance via pickling."""
@@ -81,84 +75,48 @@ def update_index(dataset_id, name, description):
     with open(index_path, 'w') as f:
         json.dump(data, f, indent=2)
 
-# Coordinate Mapping Logic (Replicated from Mandelbrot Renderer for Path Calculation)
-VIEW_CENTER_RE = -0.75
-VIEW_CENTER_IM = 0.0
-VIEW_WIDTH = 3.0
-VIEW_HEIGHT = 3.0
+def load_renderer(renderer_path: str, tile_size: int, renderer_kwargs: Dict[str, Any]):
+    """
+    Load and instantiate a renderer class given a module path string of the form
+    'module.submodule:ClassName' or 'module.submodule.ClassName'.
+    """
+    if ':' in renderer_path:
+        module_path, class_name = renderer_path.split(':', 1)
+    elif '.' in renderer_path:
+        module_path, class_name = renderer_path.rsplit('.', 1)
+    else:
+        raise ValueError("Renderer path must be in the form 'module:ClassName' or 'module.ClassName'.")
 
-def complex_to_tile_coords(re, im, level):
-    num_tiles = 2 ** level
-    
-    global_min_re = VIEW_CENTER_RE - VIEW_WIDTH / 2
-    global_max_im = VIEW_CENTER_IM + VIEW_HEIGHT / 2
-    
-    # fraction of view width
-    frac_x = (re - global_min_re) / VIEW_WIDTH
-    # fraction of view height (inverted Y)
-    frac_y = (global_max_im - im) / VIEW_HEIGHT
-    
-    # Total position in tile units
-    total_tile_x = frac_x * num_tiles
-    total_tile_y = frac_y * num_tiles
-    
-    tile_x = int(total_tile_x)
-    tile_y = int(total_tile_y)
-    
-    offset_x = total_tile_x - tile_x
-    offset_y = total_tile_y - tile_y
-    
-    return tile_x, tile_y, offset_x, offset_y
+    module = importlib.import_module(module_path)
+    renderer_cls = getattr(module, class_name)
 
-def load_or_create_paths(dataset_id, renderer_type):
+    kwargs = dict(renderer_kwargs or {})
+    try:
+        sig = inspect.signature(renderer_cls)
+        if 'tile_size' in sig.parameters and 'tile_size' not in kwargs:
+            kwargs['tile_size'] = tile_size
+    except (TypeError, ValueError):
+        # Builtins or C extensions may not support signature inspection
+        pass
+
+    try:
+        return renderer_cls(**kwargs)
+    except TypeError as exc:
+        raise TypeError(f"Failed to instantiate renderer '{renderer_path}' with args {kwargs}: {exc}") from exc
+
+
+def load_paths(dataset_id: str):
+    """Load camera paths for a dataset; assumes the JSON file already exists."""
     path_file = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'paths.json')
-    
-    if os.path.exists(path_file):
-        print(f"Loading existing paths from {path_file}")
-        try:
-            with open(path_file, 'r') as f:
-                data = json.load(f)
-                return data.get('paths', [])
-        except Exception as e:
-            print(f"Error loading paths: {e}. Regenerating defaults.")
+    if not os.path.exists(path_file):
+        raise FileNotFoundError(f"paths.json not found for dataset '{dataset_id}' at {path_file}")
 
-    ensure_dirs(os.path.dirname(path_file))
-    
-    paths = []
-    
-    if renderer_type == 'mandelbrot':
-        # Multi-stage deep zoom path
-        
-        # 1. Start: Full View
-        tx0, ty0, ox0, oy0 = complex_to_tile_coords(-0.75, 0.0, 0)
-        k1 = {"camera": {"level": 0, "tileX": tx0, "tileY": ty0, "offsetX": ox0, "offsetY": oy0, "rotation": 0}}
-        
-        # 2. Seahorse Valley Approach (Level 5)
-        # A nice overview of the valley between the head and body
-        tx1, ty1, ox1, oy1 = complex_to_tile_coords(-0.748, 0.1, 5)
-        k2 = {"camera": {"level": 5, "tileX": tx1, "tileY": ty1, "offsetX": ox1, "offsetY": oy1, "rotation": 0}}
+    with open(path_file, 'r') as f:
+        data = json.load(f)
 
-        # 3. Spiral Feature (Level 12)
-        # Diving into a specific spiral arm
-        tx2, ty2, ox2, oy2 = complex_to_tile_coords(-0.7436431, 0.1318255, 12)
-        k3 = {"camera": {"level": 12, "tileX": tx2, "tileY": ty2, "offsetX": ox2, "offsetY": oy2, "rotation": 0}}
-        
-        # 4. Deep Target (Level 20)
-        # Final destination: a mini-mandelbrot deep inside
-        target_re = -0.7436438870371587
-        target_im = 0.13182590420531197
-        tx3, ty3, ox3, oy3 = complex_to_tile_coords(target_re, target_im, 20)
-        k4 = {"camera": {"level": 20, "tileX": tx3, "tileY": ty3, "offsetX": ox3, "offsetY": oy3, "rotation": 0}}
-        
-        paths.append({
-            "id": "default_path",
-            "name": "Default Path",
-            "keyframes": [k1, k2, k3, k4]
-        })
-
-    with open(path_file, 'w') as f:
-        json.dump({"paths": paths}, f, indent=2)
-    
+    paths = data.get('paths', [])
+    if not isinstance(paths, list):
+        raise ValueError(f"paths.json for dataset '{dataset_id}' must contain a list under the 'paths' key.")
     return paths
 
 def generate_full_pyramid(renderer, dataset_id, max_level):
@@ -252,35 +210,46 @@ def generate_tiles_along_path(renderer, dataset_id, paths, margin=1, steps=2000)
 def main():
     parser = argparse.ArgumentParser(description="Generate datasets for Ultra-Resolution Quads")
     parser.add_argument('--dataset', required=True, help='Dataset ID (e.g. debug_quadtile, mandelbrot_deep)')
-    parser.add_argument('--renderer', choices=['debug', 'mandelbrot'], required=True)
+    parser.add_argument('--renderer', required=True, help='Renderer class path, e.g. renderers.mandelbrot_renderer:MandelbrotDeepZoomRenderer')
+    parser.add_argument('--renderer_args', default="{}", help='JSON dict of kwargs passed to the renderer constructor')
+    parser.add_argument('--name', default=None, help='Dataset display name (defaults to dataset id)')
+    parser.add_argument('--description', default="", help='Dataset description')
     parser.add_argument('--max_level', type=int, default=4, help='Max level to generate')
-    parser.add_argument('--mode', choices=['full', 'path'], default=None, help='Generation mode (default depends on renderer)')
-    parser.add_argument('--tile_size', type=int, default=512, help='Tile size (pixels) for generated tiles')
+    parser.add_argument('--mode', choices=['full', 'path'], default='path', help='Generation mode')
+    parser.add_argument('--tile_size', type=int, default=512, help='Tile size (pixels) for generated tiles (used if renderer supports it)')
     
     args = parser.parse_args()
-    
-    # Defaults
-    if args.mode is None:
-        if args.renderer == 'debug':
-            args.mode = 'full'
-        else:
-            args.mode = 'path'
-    
-    if args.renderer == 'debug':
-        renderer = DebugQuadtileRenderer(tile_size=args.tile_size)
-        name = "Debug Quadtile"
-        desc = "Debug tiles to verify coordinate system"
-    elif args.renderer == 'mandelbrot':
-        renderer = MandelbrotDeepZoomRenderer(tile_size=args.tile_size)
-        name = "Mandelbrot Deep Zoom"
-        desc = "Standard Mandelbrot set with deep zoom path"
-    
+
+    try:
+        renderer_kwargs = json.loads(args.renderer_args)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid JSON passed to --renderer_args: {exc}") from exc
+
+    if renderer_kwargs is not None and not isinstance(renderer_kwargs, dict):
+        raise SystemExit("--renderer_args must decode to a JSON object (dictionary).")
+
+    renderer = load_renderer(args.renderer, args.tile_size, renderer_kwargs)
+
+    config_path = os.path.join(DATA_ROOT, 'datasets', args.dataset, 'config.json')
+    existing_name = None
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                existing_config = json.load(f)
+                existing_name = existing_config.get('name')
+        except (OSError, json.JSONDecodeError):
+            existing_name = None
+
+    name = args.name or existing_name or args.dataset
+    desc = args.description or ""
+
     print(f"Initializing dataset: {args.dataset}")
     update_index(args.dataset, name, desc)
     # Config is saved at the end after determining actual max_level
     
-    # Generate/Save Paths
-    paths_data = load_or_create_paths(args.dataset, args.renderer)
+    paths_data = None
+    if args.mode == 'path':
+        paths_data = load_paths(args.dataset)
     
     tiles_root = os.path.join(DATA_ROOT, 'datasets', args.dataset, 'tiles')
     # Clear previous tiles so each run is fresh

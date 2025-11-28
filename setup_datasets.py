@@ -19,7 +19,9 @@ def main():
     # The custom path we added is for playback, not generation guidance here.
     cmd_debug = base_cmd + [
         "--dataset", "debug_quadtile",
-        "--renderer", "debug",
+        "--renderer", "renderers.debug_renderer:DebugQuadtileRenderer",
+        "--name", "Debug Quadtile",
+        "--description", "Debug tiles to verify coordinate system",
         "--max_level", "5",
         "--mode", "full"
     ]
@@ -30,7 +32,9 @@ def main():
     # This respects the existing paths.json if present.
     cmd_mandelbrot = base_cmd + [
         "--dataset", "mandelbrot_deep",
-        "--renderer", "mandelbrot",
+        "--renderer", "renderers.mandelbrot_renderer:MandelbrotDeepZoomRenderer",
+        "--name", "Mandelbrot Deep Zoom",
+        "--description", "Standard Mandelbrot set with deep zoom path",
         "--max_level", "20",
         "--mode", "path"
     ]
