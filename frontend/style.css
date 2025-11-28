@@ -20,7 +20,18 @@ body, html {
     position: relative;
     overflow: hidden;
     background-color: #000;
-    cursor: crosshair;
+}
+
+#viewer.explore {
+    cursor: grab;
+}
+
+#viewer.explore:active {
+    cursor: grabbing;
+}
+
+#viewer.experience {
+    cursor: default;
 }
 
 #layers-container {

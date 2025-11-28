@@ -20,7 +20,12 @@ const document = {
         textContent: '',
         getBoundingClientRect: () => ({ width: 800, height: 600 }),
         appendChild: (child) => { /* mocked below in layers */ },
-        innerHTML: '' 
+        innerHTML: '',
+        classList: {
+            add: () => {},
+            remove: () => {},
+            contains: () => false
+        }
     }),
     getElementsByName: (name) => [],
     createElement: (tag) => ({

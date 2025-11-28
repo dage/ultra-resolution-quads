@@ -12,16 +12,16 @@ const state = {
         x: 0.5,
         y: 0.5
     },
-    mode: 'explore',
+    mode: 'experience',
     isDragging: false,
     lastMouse: { x: 0, y: 0 },
     viewSize: { width: 0, height: 0 },
     
-    // Path Playback State
+    // Experience (Path Playback) State
     paths: [],
     activePath: null,
     pathSampler: null,
-    pathPlayback: {
+    experience: {
         active: false,
         startTime: 0,
         currentElapsed: 0,
@@ -47,7 +47,7 @@ const els = {
         y: document.getElementById('val-y'),
     },
     modeRadios: document.getElementsByName('mode'),
-    pathControls: document.getElementById('path-controls'),
+    experienceControls: document.getElementById('experience-controls'),
     btnReset: document.getElementById('btn-reset'),
     btns: {
         start: document.getElementById('btn-skip-start'),
@@ -71,6 +71,7 @@ async function init() {
         }
         
         setupEventListeners();
+        updateCursor();
         requestAnimationFrame(renderLoop);
     } catch (e) {
         console.error("Failed to init:", e);
@@ -134,27 +135,27 @@ function autoSelectPath() {
     // Automatically select the first path if available
     if (state.paths.length > 0) {
         setActivePath(state.paths[0]);
-        setPathControlsEnabled(true);
+        setExperienceControlsEnabled(true);
     } else {
         setActivePath(null);
-        setPathControlsEnabled(false);
+        setExperienceControlsEnabled(false);
     }
 
-    recalculatePathPlaybackTiming();
+    recalculateExperienceTiming();
     // Reset playback state
-    state.pathPlayback.currentElapsed = 0;
-    state.pathPlayback.active = false;
+    state.experience.currentElapsed = 0;
+    state.experience.active = false;
     if (els.btns.playPause) els.btns.playPause.textContent = '▶';
-    updatePathPlayback(performance.now());
+    updateExperience(performance.now());
 }
 
-function setPathControlsEnabled(enabled) {
+function setExperienceControlsEnabled(enabled) {
     const opacity = enabled ? 1.0 : 0.5;
     const pointerEvents = enabled ? 'auto' : 'none';
     
-    if (els.pathControls) {
-        els.pathControls.style.opacity = opacity;
-        els.pathControls.style.pointerEvents = pointerEvents;
+    if (els.experienceControls) {
+        els.experienceControls.style.opacity = opacity;
+        els.experienceControls.style.pointerEvents = pointerEvents;
     }
 }
 
@@ -176,8 +177,9 @@ function setupEventListeners() {
         radio.addEventListener('change', (e) => {
             if (e.target.checked) {
                 state.mode = e.target.value;
-                els.pathControls.style.display = state.mode === 'path' ? 'block' : 'none';
+                els.experienceControls.style.display = state.mode === 'experience' ? 'block' : 'none';
                 updateInputAvailability();
+                updateCursor();
             }
         });
     });
@@ -189,66 +191,66 @@ function setupEventListeners() {
     els.btns.playPause.addEventListener('click', () => {
         if (!state.activePath) return;
         
-        if (state.pathPlayback.active) {
+        if (state.experience.active) {
             // Pause
-            state.pathPlayback.active = false;
+            state.experience.active = false;
             els.btns.playPause.textContent = '▶';
-            // elapsed is already tracked in updatePathPlayback, but let's ensure it's stable
+            // elapsed is already tracked in updateExperience, but let's ensure it's stable
             // No specific action needed as currentElapsed is updated in render loop or maintained
         } else {
             // Play
             // If we are at the end, restart
-            if (state.pathPlayback.currentElapsed >= state.pathPlayback.totalDuration) {
-                state.pathPlayback.currentElapsed = 0;
+            if (state.experience.currentElapsed >= state.experience.totalDuration) {
+                state.experience.currentElapsed = 0;
             }
             
-            state.pathPlayback.active = true;
-            state.pathPlayback.startTime = performance.now() - state.pathPlayback.currentElapsed;
+            state.experience.active = true;
+            state.experience.startTime = performance.now() - state.experience.currentElapsed;
             els.btns.playPause.textContent = '⏸';
         }
     });
 
     // Skip Buttons
     els.btns.start.addEventListener('click', () => {
-        state.pathPlayback.currentElapsed = 0;
-        if (state.pathPlayback.active) state.pathPlayback.startTime = performance.now();
-        updatePathPlayback(state.pathPlayback.active ? performance.now() : 0); 
+        state.experience.currentElapsed = 0;
+        if (state.experience.active) state.experience.startTime = performance.now();
+        updateExperience(state.experience.active ? performance.now() : 0); 
         // If paused, we need to force update with a fake 'now' that respects the 0 elapsed
-        if (!state.pathPlayback.active) forceSeek(0);
+        if (!state.experience.active) forceSeek(0);
     });
 
     els.btns.end.addEventListener('click', () => {
-        state.pathPlayback.currentElapsed = state.pathPlayback.totalDuration;
-        state.pathPlayback.active = false;
+        state.experience.currentElapsed = state.experience.totalDuration;
+        state.experience.active = false;
         els.btns.playPause.textContent = '▶';
-        forceSeek(state.pathPlayback.totalDuration);
+        forceSeek(state.experience.totalDuration);
     });
     
     els.btns.back.addEventListener('click', () => {
-        let t = state.pathPlayback.currentElapsed - 10000;
+        let t = state.experience.currentElapsed - 10000;
         if (t < 0) t = 0;
-        state.pathPlayback.currentElapsed = t;
-        if (state.pathPlayback.active) state.pathPlayback.startTime = performance.now() - t;
+        state.experience.currentElapsed = t;
+        if (state.experience.active) state.experience.startTime = performance.now() - t;
         else forceSeek(t);
     });
 
     els.btns.fwd.addEventListener('click', () => {
-        let t = state.pathPlayback.currentElapsed + 10000;
-        if (t > state.pathPlayback.totalDuration) t = state.pathPlayback.totalDuration;
-        state.pathPlayback.currentElapsed = t;
-        if (state.pathPlayback.active) state.pathPlayback.startTime = performance.now() - t;
+        let t = state.experience.currentElapsed + 10000;
+        if (t > state.experience.totalDuration) t = state.experience.totalDuration;
+        state.experience.currentElapsed = t;
+        if (state.experience.active) state.experience.startTime = performance.now() - t;
         else forceSeek(t);
     });
 
     // Scrubber
     els.inputs.time.addEventListener('input', (e) => {
-        state.pathPlayback.active = false; // Pause playback on scrub
+        state.experience.active = false; // Pause playback on scrub
         els.btns.playPause.textContent = '▶';
         
         const scrubbedFraction = parseFloat(e.target.value);
-        const scrubbedTime = state.pathPlayback.totalDuration * scrubbedFraction;
+        const scrubbedTime = state.experience.totalDuration * scrubbedFraction;
         
-        state.pathPlayback.currentElapsed = scrubbedTime;
+        state.experience.currentElapsed = scrubbedTime;
         forceSeek(scrubbedTime);
     });
 
@@ -301,18 +303,33 @@ function setupEventListeners() {
 }
 
 function updateInputAvailability() {
-    const disabled = state.mode === 'path';
+    const disabled = state.mode === 'experience';
     els.inputs.level.disabled = disabled;
     els.inputs.x.disabled = disabled;
     els.inputs.y.disabled = disabled;
     
-    // Visually indicate disabled state for ranges/inputs if standard CSS doesn't cover it enough
-    // (Browser default for disabled inputs is usually sufficient: greyed out and non-interactive)
+    if (state.mode === 'experience') {
+        els.experienceControls.style.display = 'block';
+    } else {
+        els.experienceControls.style.display = 'none';
+    }
+}
+
+function updateCursor() {
+    // Clear classes first
+    els.viewer.classList.remove('explore', 'experience');
+    
+    // Add appropriate class
+    if (state.mode === 'explore') {
+        els.viewer.classList.add('explore');
+    } else {
+        els.viewer.classList.add('experience');
+    }
 }
 
 // Helper to seek when paused
 function forceSeek(elapsedTime) {
-    updatePathPlaybackWithElapsed(elapsedTime);
+    updateExperienceWithElapsed(elapsedTime);
 }
 
 function updateViewSize() {
@@ -354,7 +371,7 @@ function updateUI() {
     if (document.activeElement !== els.inputs.y) els.inputs.y.value = state.camera.y;
 }
 
-// Path Playback
+// Experience (Path Playback) Logic
 const PATH_SPEED = {
     visualUnitsPerSecond: 2.0, // Increased by 4x from 0.5
     minSegmentMs: 300
@@ -395,10 +412,10 @@ function segmentDurationMs(k1, k2) {
     return Math.max(durationSeconds * 1000, PATH_SPEED.minSegmentMs);
 }
 
-function recalculatePathPlaybackTiming() {
+function recalculateExperienceTiming() {
     if (!state.activePath || state.activePath.keyframes.length < 2) {
-        state.pathPlayback.segmentDurations = [];
-        state.pathPlayback.totalDuration = 0;
+        state.experience.segmentDurations = [];
+        state.experience.totalDuration = 0;
         return;
     }
 
@@ -408,35 +425,35 @@ function recalculatePathPlaybackTiming() {
         const k2 = state.activePath.keyframes[i + 1].camera;
         durations.push(segmentDurationMs(k1, k2));
     }
-    state.pathPlayback.segmentDurations = durations;
-    state.pathPlayback.totalDuration = durations.reduce((a, b) => a + b, 0);
+    state.experience.segmentDurations = durations;
+    state.experience.totalDuration = durations.reduce((a, b) => a + b, 0);
 }
 
-function updatePathPlayback(now) {
+function updateExperience(now) {
     if (!state.activePath || state.activePath.keyframes.length < 2) return;
-    if (!state.pathPlayback.segmentDurations.length || state.pathPlayback.totalDuration <= 0) return;
+    if (!state.experience.segmentDurations.length || state.experience.totalDuration <= 0) return;
 
     // If active, calculate elapsed from start time
-    if (state.pathPlayback.active) {
-        state.pathPlayback.currentElapsed = now - state.pathPlayback.startTime;
+    if (state.experience.active) {
+        state.experience.currentElapsed = now - state.experience.startTime;
         
         // Check for end
-        if (state.pathPlayback.currentElapsed >= state.pathPlayback.totalDuration) {
-            state.pathPlayback.currentElapsed = state.pathPlayback.totalDuration;
-            state.pathPlayback.active = false;
+        if (state.experience.currentElapsed >= state.experience.totalDuration) {
+            state.experience.currentElapsed = state.experience.totalDuration;
+            state.experience.active = false;
             els.btns.playPause.textContent = '▶';
         }
     }
 
-    updatePathPlaybackWithElapsed(state.pathPlayback.currentElapsed);
+    updateExperienceWithElapsed(state.experience.currentElapsed);
 
     // Speed Logging
-    if (state.pathPlayback.active && now - lastSpeedLogTime > 1000) { // Log approximately every second when active
+    if (state.experience.active && now - lastSpeedLogTime > 1000) { // Log approximately every second when active
         if (prevCameraStateForLog) {
-            const currentProgress = state.pathPlayback.currentElapsed / state.pathPlayback.totalDuration;
+            const currentProgress = state.experience.currentElapsed / state.experience.totalDuration;
             // Get previous progress for accurate dt
-            const prevElapsed = Math.max(0, state.pathPlayback.currentElapsed - (now - lastSpeedLogTime));
-            const prevProgress = prevElapsed / state.pathPlayback.totalDuration;
+            const prevElapsed = Math.max(0, state.experience.currentElapsed - (now - lastSpeedLogTime));
+            const prevProgress = prevElapsed / state.experience.totalDuration;
 
             const camCurrent = state.pathSampler.cameraAtProgress(currentProgress);
             const camPrev = state.pathSampler.cameraAtProgress(prevProgress);
@@ -469,11 +486,11 @@ function updatePathPlayback(now) {
     }
 }
 
-function updatePathPlaybackWithElapsed(elapsed) {
-    if (!state.activePath || !state.pathSampler || state.pathPlayback.totalDuration <= 0) return;
+function updateExperienceWithElapsed(elapsed) {
+    if (!state.activePath || !state.pathSampler || state.experience.totalDuration <= 0) return;
 
-    const clamped = Math.min(Math.max(elapsed, 0), state.pathPlayback.totalDuration);
-    const progress = state.pathPlayback.totalDuration > 0 ? (clamped / state.pathPlayback.totalDuration) : 0;
+    const clamped = Math.min(Math.max(elapsed, 0), state.experience.totalDuration);
+    const progress = state.experience.totalDuration > 0 ? (clamped / state.experience.totalDuration) : 0;
     const cam = state.pathSampler.cameraAtProgress(progress);
     if (!cam) return;
 
@@ -484,8 +501,8 @@ function updatePathPlaybackWithElapsed(elapsed) {
     updateUI();
 
     // Update scrubber position
-    if (els.inputs.time && state.pathPlayback.totalDuration > 0) {
-        const currentFraction = clamped / state.pathPlayback.totalDuration;
+    if (els.inputs.time && state.experience.totalDuration > 0) {
+        const currentFraction = clamped / state.experience.totalDuration;
         els.inputs.time.value = currentFraction.toFixed(4);
     }
 }
@@ -556,8 +573,8 @@ function updateLayer(level, opacity, targetTiles) {
 }
 
 function renderLoop() {
-    if (state.mode === 'path') {
-        updatePathPlayback(performance.now());
+    if (state.mode === 'experience') {
+        updateExperience(performance.now());
     }
 
     if (!state.activeDatasetId || !state.config) {
