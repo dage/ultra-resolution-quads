@@ -53,28 +53,27 @@ The PRD is written to be directly actionable for coding agents: all data flows a
 ## 4. Coordinate System & Camera Model
 
 ### 4.1 Layer-Stack Architecture
-To support unlimited zoom depth without floating-point precision loss:
+To support deep zoom with a simpler API:
 - **Fixed viewport**: Camera stays conceptually centered; tiles move around it.
-- **Integer tile indexing**: Tiles use `(level, x, y)` coordinates—exact, no floating-point error.
-- **Per-layer offsets**: A float offset in `[0, 1)` tracks fractional position within the current tile.
-- **Why this works**: Integer indices remain exact; offsets stay high-precision. There is no precision wall at level ~53.
+- **Integer tile indexing under the hood**: Tiles use `(level, tx, ty)` internally, derived from camera position.
+- **Normalized camera position**: A single pair `(x, y)` in `[0, 1)` at level 0; no split tile/offset state.
+- **Why this works**: Only one coordinate pair to maintain, while tile selection still uses exact integer indices.
 
 Result: Zoom depth is limited only by tile generation, not by IEEE 754 floating-point.
 
 ### 4.2 Camera State Representation
 - Camera state used by the frontend and stored in JSON:
-  - `level` – current zoom level (integer).
-  - `tileX`, `tileY` – integer tile indices at that level.
-  - `offsetX`, `offsetY` – floats in `[0, 1)` for intra-tile position.
+  - `globalLevel` – zoom as a single double; integer part selects the base level, fractional part drives crossfade.
+  - `x`, `y` – normalized doubles in `[0,1)` at level 0 (single pair, no split tile/offset).
   - `rotation` (optional) – rotation angle in radians or degrees.
 - Internal layer stack representation in the viewer:
-  - Array of layers: `{ level, tileX, tileY, offsetX, offsetY }` per zoom level.
+  - Derived per-layer coordinates are computed from `(level, x, y)` only; tile indices are an internal detail of rendering.
 
 ## 5. Tiles & Rendering
 
 ### 5.1 Frontend Rendering Logic
 - The frontend renders tiles as positioned DOM elements (e.g. absolutely positioned `div` or `img`).
-- Pan updates the camera offsets; when `offsetX` or `offsetY` are outside `[0, 1)`, the corresponding tile index increments/decrements (wrapping logic).
+- Pan updates the normalized `x/y` in global space.
 - Zoom interpolates between adjacent layers with a crossfade:
   - As we zoom into a child quadrant, fade out the parent tile and fade in the four child tiles.
 - Rendering loop uses `requestAnimationFrame` for smooth updates.
@@ -125,7 +124,7 @@ Camera paths keyed by id:
       "name": "Default Path",
       "keyframes": [
         {
-          "camera": { "level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.5, "offsetY": 0.5, "rotation": 0.0 }
+          "camera": { "level": 0, "x": 0.5, "y": 0.5, "rotation": 0.0 }
         }
       ]
     }
@@ -140,7 +139,7 @@ Camera paths keyed by id:
 
 ### 7.1 Shared Rendering Engine
 - Both frontend modes use the same core engine:
-  - Maintains camera state (`level`, `tileX`, `tileY`, `offsetX`, `offsetY`, `rotation`).
+  - Maintains camera state (`level`, `zoomOffset`, `x`, `y`, `rotation`).
   - Computes which tiles are visible for the current camera and viewport.
   - Loads tiles on demand as images from the filesystem layout.
   - Keeps a small margin of tiles beyond the viewport and evicts far-away tiles to limit memory usage.
@@ -149,18 +148,18 @@ Camera paths keyed by id:
 
 ### 7.2 Exploration Mode
 - Input:
-  - Mouse drag to pan (updates offsets and tile indices).
+  - Mouse drag to pan (updates normalized `x/y`).
   - Scroll wheel to zoom in/out (updates active layer and crossfade).
 - Camera UI:
   - Explicit panel showing current camera state:
-    - Numeric inputs/sliders for `level`, `tileX`, `tileY`, `offsetX`, `offsetY`, and `rotation`.
+    - Numeric inputs/sliders for `level`, `x`, `y`, and `rotation`.
     - Buttons for small incremental moves (e.g. pan up/down/left/right, zoom in/out).
   - Changing these values updates the camera state and lets both humans and AI agents control the viewpoint and capture screenshots.
 
 ### 7.3 Path Playback Mode
 - Camera follows a keyframe-based path defined in the dataset’s `paths.json`.
 - Keyframes are ordered in the `keyframes` array; playback progresses through them in sequence using a normalized time parameter between successive keyframes.
-- Linear interpolation of position (`tileX`, `tileY`, `offsetX`, `offsetY`), `level`, and `rotation` between successive keyframes initially.
+- Linear interpolation of position (`x`, `y`), `level`, and `rotation` between successive keyframes initially.
 - UI:
   - Dataset selector.
   - Play/pause controls and time scrubber for the active dataset’s default path.
@@ -229,7 +228,7 @@ Camera paths keyed by id:
 - Contains automated test scripts to verify core logic without needing a full browser environment.
 - **Key Tests:**
   - `tests/test_frontend.js`: Uses a Node.js sandbox to mock the DOM and execute `frontend/main.js`. It verifies:
-    - **Zoom Logic:** Correct level increments/decrements and offset wrapping.
+    - **Zoom Logic:** Correct level increments/decrements with smooth crossfades.
     - **Rendering:** Correct identification of visible tiles for parent/child layers.
     - **Crossfading:** Correct opacity calculations (Parent stable at 1.0, Child fades in).
     - **Performance:** Verification that DOM elements are reused (reconciled) rather than recreated every frame.

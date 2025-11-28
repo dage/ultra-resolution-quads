@@ -8,12 +8,9 @@ const state = {
     activeDatasetId: null,
     config: null,
     camera: {
-        level: 0,
-        zoomOffset: 0,
-        tileX: 0,
-        tileY: 0,
-        offsetX: 0.5,
-        offsetY: 0.5
+        globalLevel: 0,
+        x: 0.5,
+        y: 0.5
     },
     mode: 'explore',
     isDragging: false,
@@ -40,18 +37,14 @@ const els = {
     datasetSelect: document.getElementById('dataset-select'),
     inputs: {
         level: document.getElementById('in-level'),
-        tileX: document.getElementById('in-tileX'),
-        tileY: document.getElementById('in-tileY'),
-        offsetX: document.getElementById('in-offsetX'),
-        offsetY: document.getElementById('in-offsetY'),
+        x: document.getElementById('in-x'),
+        y: document.getElementById('in-y'),
         time: document.getElementById('in-time'),
     },
     vals: {
         level: document.getElementById('val-level'),
-        tileX: document.getElementById('val-tileX'),
-        tileY: document.getElementById('val-tileY'),
-        offsetX: document.getElementById('val-offsetX'),
-        offsetY: document.getElementById('val-offsetY'),
+        x: document.getElementById('val-x'),
+        y: document.getElementById('val-y'),
     },
     modeRadios: document.getElementsByName('mode'),
     pathControls: document.getElementById('path-controls'),
@@ -167,12 +160,9 @@ function setPathControlsEnabled(enabled) {
 
 function resetCamera() {
     state.camera = {
-        level: 0,
-        zoomOffset: 0,
-        tileX: 0,
-        tileY: 0,
-        offsetX: 0.5,
-        offsetY: 0.5
+        globalLevel: 0,
+        x: 0.5,
+        y: 0.5
     };
     updateUI();
 }
@@ -289,14 +279,14 @@ function setupEventListeners() {
     
     // Camera Inputs
     els.inputs.level.addEventListener('input', (e) => { 
-        state.camera.level = parseInt(e.target.value); 
-        state.camera.zoomOffset = 0; // Reset zoom offset when manually changing level to avoid confusion
-        updateUI(); 
+        const lvl = parseInt(e.target.value);
+        if (!Number.isNaN(lvl)) {
+            state.camera.globalLevel = Math.max(0, lvl);
+            updateUI(); 
+        }
     });
-    els.inputs.tileX.addEventListener('input', (e) => { state.camera.tileX = parseInt(e.target.value); updateUI(); });
-    els.inputs.tileY.addEventListener('input', (e) => { state.camera.tileY = parseInt(e.target.value); updateUI(); });
-    els.inputs.offsetX.addEventListener('input', (e) => { state.camera.offsetX = parseFloat(e.target.value); updateUI(); });
-    els.inputs.offsetY.addEventListener('input', (e) => { state.camera.offsetY = parseFloat(e.target.value); updateUI(); });
+    els.inputs.x.addEventListener('input', (e) => { state.camera.x = clamp01(parseFloat(e.target.value)); updateUI(); });
+    els.inputs.y.addEventListener('input', (e) => { state.camera.y = clamp01(parseFloat(e.target.value)); updateUI(); });
 
     // Reset Button
     els.btnReset.addEventListener('click', resetCamera);
@@ -313,17 +303,11 @@ function setupEventListeners() {
 function updateInputAvailability() {
     const disabled = state.mode === 'path';
     els.inputs.level.disabled = disabled;
-    els.inputs.tileX.disabled = disabled;
-    els.inputs.tileY.disabled = disabled;
-    els.inputs.offsetX.disabled = disabled;
-    els.inputs.offsetY.disabled = disabled;
+    els.inputs.x.disabled = disabled;
+    els.inputs.y.disabled = disabled;
     
     // Visually indicate disabled state for ranges/inputs if standard CSS doesn't cover it enough
     // (Browser default for disabled inputs is usually sufficient: greyed out and non-interactive)
-}
-
-function updateViewSize() {
-    updateViewSize();
 }
 
 // Helper to seek when paused
@@ -337,90 +321,37 @@ function updateViewSize() {
 }
 
 // Camera Logic
+function clamp01(v) {
+    if (Number.isNaN(v) || !Number.isFinite(v)) return 0.5;
+    return Math.min(1, Math.max(0, v));
+}
+
 function pan(dx, dy) {
-    const scale = Math.pow(2, state.camera.zoomOffset);
-    const tileSizePx = LOGICAL_TILE_SIZE * scale;
-    
-    const dOffX = -dx / tileSizePx;
-    const dOffY = -dy / tileSizePx;
-    
-    state.camera.offsetX += dOffX;
-    state.camera.offsetY += dOffY;
-    
-    normalizeCamera();
+    // Compute delta in normalized global units. One tile at current level spans 1 / 2^level.
+    const scale = Math.pow(2, state.camera.globalLevel);
+    const worldPerPixel = 1 / (LOGICAL_TILE_SIZE * scale);
+    state.camera.x = clamp01(state.camera.x - dx * worldPerPixel);
+    state.camera.y = clamp01(state.camera.y - dy * worldPerPixel);
     updateUI();
 }
 
 function zoom(amount) {
-    state.camera.zoomOffset += amount;
-    
-    while (state.camera.zoomOffset >= 1.0) {
-        state.camera.level++;
-        state.camera.zoomOffset -= 1.0;
-        
-        const fullX = (state.camera.tileX + state.camera.offsetX) * 2;
-        const fullY = (state.camera.tileY + state.camera.offsetY) * 2;
-        
-        state.camera.tileX = Math.floor(fullX);
-        state.camera.tileY = Math.floor(fullY);
-        state.camera.offsetX = fullX % 1;
-        state.camera.offsetY = fullY % 1;
-    }
-    
-    while (state.camera.zoomOffset < 0.0) {
-        if (state.camera.level > 0) {
-            state.camera.level--;
-            state.camera.zoomOffset += 1.0;
-            
-            const fullX = (state.camera.tileX + state.camera.offsetX) / 2;
-            const fullY = (state.camera.tileY + state.camera.offsetY) / 2;
-            
-            state.camera.tileX = Math.floor(fullX);
-            state.camera.tileY = Math.floor(fullY);
-            state.camera.offsetX = fullX % 1;
-            state.camera.offsetY = fullY % 1;
-        } else {
-            state.camera.zoomOffset = 0;
-        }
-    }
-    
+    state.camera.globalLevel = Math.max(0, state.camera.globalLevel + amount);
     updateUI();
-}
-
-function normalizeCamera() {
-    while (state.camera.offsetX < 0) {
-        state.camera.offsetX += 1;
-        state.camera.tileX--;
-    }
-    while (state.camera.offsetX >= 1) {
-        state.camera.offsetX -= 1;
-        state.camera.tileX++;
-    }
-    
-    while (state.camera.offsetY < 0) {
-        state.camera.offsetY += 1;
-        state.camera.tileY--;
-    }
-    while (state.camera.offsetY >= 1) {
-        state.camera.offsetY -= 1;
-        state.camera.tileY++;
-    }
 }
 
 function updateUI() {
     if (!els.vals.level) return;
-    els.vals.level.textContent = state.camera.level + " (+ " + state.camera.zoomOffset.toFixed(2) + ")";
-    els.vals.tileX.textContent = state.camera.tileX;
-    els.vals.tileY.textContent = state.camera.tileY;
-    els.vals.offsetX.textContent = state.camera.offsetX.toFixed(4);
-    els.vals.offsetY.textContent = state.camera.offsetY.toFixed(4);
+    const lvl = Math.floor(state.camera.globalLevel);
+    const zoomOffset = state.camera.globalLevel - lvl;
+    els.vals.level.textContent = lvl + " (+ " + zoomOffset.toFixed(2) + ")";
+    if (els.vals.x) els.vals.x.textContent = state.camera.x.toFixed(6);
+    if (els.vals.y) els.vals.y.textContent = state.camera.y.toFixed(6);
     
     // Only update inputs if they are not focused to allow editing without overwrite
-    if (document.activeElement !== els.inputs.level) els.inputs.level.value = state.camera.level;
-    if (document.activeElement !== els.inputs.tileX) els.inputs.tileX.value = state.camera.tileX;
-    if (document.activeElement !== els.inputs.tileY) els.inputs.tileY.value = state.camera.tileY;
-    if (document.activeElement !== els.inputs.offsetX) els.inputs.offsetX.value = state.camera.offsetX;
-    if (document.activeElement !== els.inputs.offsetY) els.inputs.offsetY.value = state.camera.offsetY;
+    if (document.activeElement !== els.inputs.level) els.inputs.level.value = lvl;
+    if (document.activeElement !== els.inputs.x) els.inputs.x.value = state.camera.x;
+    if (document.activeElement !== els.inputs.y) els.inputs.y.value = state.camera.y;
 }
 
 // Path Playback
@@ -433,19 +364,17 @@ let lastSpeedLogTime = 0; // For debug logging
 let prevCameraStateForLog = null; // For instantaneous speed calculation
 
 function cameraToGlobal(camera) {
-    const globalLevel = camera.level + (camera.zoomOffset || 0);
-    const factor = 1.0 / Math.pow(2, globalLevel);
     return {
-        x: (camera.tileX + camera.offsetX) * factor,
-        y: (camera.tileY + camera.offsetY) * factor,
-        level: globalLevel
+        x: camera.x,
+        y: camera.y,
+        level: camera.globalLevel
     };
 }
 
 function segmentDurationMs(k1, k2) {
     // Calculate Visual Distance between two camera states
-    const l1 = k1.level + (k1.zoomOffset || 0);
-    const l2 = k2.level + (k2.zoomOffset || 0);
+    const l1 = k1.globalLevel;
+    const l2 = k2.globalLevel;
     const l_avg = (l1 + l2) / 2;
     
     // Scale factor at average level to convert Global Delta to Visual Delta
@@ -518,8 +447,8 @@ function updatePathPlayback(now) {
                 const l_avg = (l1 + l2) / 2;
                 const scale = Math.pow(2, l_avg);
 
-                const dx = (camCurrent.globalX - camPrev.globalX) * scale;
-                const dy = (camCurrent.globalY - camPrev.globalY) * scale;
+                const dx = (camCurrent.x - camPrev.x) * scale;
+                const dy = (camCurrent.y - camPrev.y) * scale;
                 const dl = l2 - l1;
 
                 const dt_ms = now - lastSpeedLogTime;
@@ -533,9 +462,9 @@ function updatePathPlayback(now) {
         lastSpeedLogTime = now;
         // Capture a snapshot of the current camera state, including global values
         prevCameraStateForLog = { 
-            globalLevel: state.camera.level + state.camera.zoomOffset, 
-            globalX: (state.camera.tileX + state.camera.offsetX) / Math.pow(2, state.camera.level),
-            globalY: (state.camera.tileY + state.camera.offsetY) / Math.pow(2, state.camera.level)
+            globalLevel: state.camera.globalLevel, 
+            x: state.camera.x,
+            y: state.camera.y
         };
     }
 }
@@ -548,12 +477,9 @@ function updatePathPlaybackWithElapsed(elapsed) {
     const cam = state.pathSampler.cameraAtProgress(progress);
     if (!cam) return;
 
-    state.camera.level = cam.level;
-    state.camera.zoomOffset = cam.zoomOffset;
-    state.camera.tileX = cam.tileX;
-    state.camera.tileY = cam.tileY;
-    state.camera.offsetX = cam.offsetX;
-    state.camera.offsetY = cam.offsetY;
+    state.camera.globalLevel = cam.globalLevel;
+    state.camera.x = cam.x;
+    state.camera.y = cam.y;
 
     updateUI();
 
@@ -587,14 +513,10 @@ function updateLayer(level, opacity, targetTiles) {
 
     const tileSize = LOGICAL_TILE_SIZE;
 
-    const camX_C = state.camera.tileX + state.camera.offsetX;
-    const camY_C = state.camera.tileY + state.camera.offsetY;
+    const camX_T = state.camera.x * Math.pow(2, level);
+    const camY_T = state.camera.y * Math.pow(2, level);
     
-    const factor = Math.pow(2, level - state.camera.level);
-    const camX_T = camX_C * factor;
-    const camY_T = camY_C * factor;
-    
-    const displayScale = Math.pow(2, state.camera.level + state.camera.zoomOffset - level);
+    const displayScale = Math.pow(2, state.camera.globalLevel - level);
     const tileSizeOnScreen = tileSize * displayScale;
     
     const tilesInViewX = state.viewSize.width / tileSizeOnScreen;
@@ -648,13 +570,15 @@ function renderLoop() {
     
     // Base stack: keep all coarser levels fully opaque as a stable background.
     // We only fade in additional detail layers above the current camera level.
-    for (let level = 0; level <= state.camera.level; level++) {
+    const baseLevel = Math.floor(state.camera.globalLevel);
+    const childOpacity = state.camera.globalLevel - baseLevel;
+
+    for (let level = 0; level <= baseLevel; level++) {
         updateLayer(level, 1.0, targetTiles);
     }
     
     // Child layer (fade in) above the current level.
-    const childOpacity = state.camera.zoomOffset;
-    updateLayer(state.camera.level + 1, childOpacity, targetTiles);
+    updateLayer(baseLevel + 1, childOpacity, targetTiles);
     
     // Reconciliation
     

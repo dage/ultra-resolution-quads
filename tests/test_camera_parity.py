@@ -16,8 +16,8 @@ class TestCameraParity(unittest.TestCase):
         """
         path = {
             "keyframes": [
-                {"camera": {"level": 0, "tileX": 0, "tileY": 0, "offsetX": 0.5, "offsetY": 0.5}},
-                {"camera": {"level": 4, "tileX": 8, "tileY": 8, "offsetX": 0.5, "offsetY": 0.5}},
+                {"camera": {"level": 0, "x": 0.5, "y": 0.5}},
+                {"camera": {"level": 4, "x": 0.5, "y": 0.5}},
             ]
         }
         camera_utils.set_camera_path(path, internal_resolution=500)
@@ -31,13 +31,13 @@ class TestCameraParity(unittest.TestCase):
         # Endpoints match keyframes
         self.assertEqual(c0['level'], 0)
         self.assertEqual(c1['level'], 4)
-        self.assertEqual(c0['tileX'], 0)
-        self.assertEqual(c1['tileX'], 8)
+        self.assertAlmostEqual(c0['x'], 0.5)
+        self.assertAlmostEqual(c1['x'], 0.5)
 
         # Midpoint roughly halfway in global space and level
         self.assertTrue(0.0 < cmid['globalLevel'] < 4.0)
-        self.assertTrue(0.0 < cmid['globalX'] < c1['globalX'])
-        self.assertTrue(0.0 < cmid['globalY'] < c1['globalY'])
+        self.assertTrue(0.0 < cmid['x'] < c1['x'] + 1e-9)
+        self.assertTrue(0.0 < cmid['y'] < c1['y'] + 1e-9)
 
         # Progress monotonicity
         sample_progresses = [p / 10.0 for p in range(11)]
@@ -63,17 +63,15 @@ class TestCameraParity(unittest.TestCase):
         }
         explicit_global_path = {
             "keyframes": [
-                {"camera": {"level": 5, "tileX": 8, "tileY": 24, "offsetX": 0.0, "offsetY": 0.0}}
+                {"camera": {"level": 5, "x": 0.25, "y": 0.75}}
             ]
         }
 
         cam_macro_global = sample_camera(macro_global_path)
         cam_explicit_global = sample_camera(explicit_global_path)
 
-        self.assertEqual(cam_macro_global['tileX'], cam_explicit_global['tileX'])
-        self.assertEqual(cam_macro_global['tileY'], cam_explicit_global['tileY'])
-        self.assertAlmostEqual(cam_macro_global['offsetX'], cam_explicit_global['offsetX'], places=9)
-        self.assertAlmostEqual(cam_macro_global['offsetY'], cam_explicit_global['offsetY'], places=9)
+        self.assertAlmostEqual(cam_macro_global['x'], cam_explicit_global['x'], places=9)
+        self.assertAlmostEqual(cam_macro_global['y'], cam_explicit_global['y'], places=9)
         self.assertAlmostEqual(cam_macro_global['globalX'], cam_explicit_global['globalX'], places=9)
         self.assertAlmostEqual(cam_macro_global['globalY'], cam_explicit_global['globalY'], places=9)
 
@@ -85,17 +83,15 @@ class TestCameraParity(unittest.TestCase):
         }
         explicit_mb_path = {
             "keyframes": [
-                {"camera": {"level": 3, "tileX": 4, "tileY": 4, "offsetX": 0.0, "offsetY": 0.0}}
+                {"camera": {"level": 3, "x": 0.5, "y": 0.5}}
             ]
         }
 
         cam_macro_mb = sample_camera(macro_mb_path)
         cam_explicit_mb = sample_camera(explicit_mb_path)
 
-        self.assertEqual(cam_macro_mb['tileX'], cam_explicit_mb['tileX'])
-        self.assertEqual(cam_macro_mb['tileY'], cam_explicit_mb['tileY'])
-        self.assertAlmostEqual(cam_macro_mb['offsetX'], cam_explicit_mb['offsetX'], places=9)
-        self.assertAlmostEqual(cam_macro_mb['offsetY'], cam_explicit_mb['offsetY'], places=9)
+        self.assertAlmostEqual(cam_macro_mb['x'], cam_explicit_mb['x'], places=9)
+        self.assertAlmostEqual(cam_macro_mb['y'], cam_explicit_mb['y'], places=9)
         self.assertAlmostEqual(cam_macro_mb['globalX'], cam_explicit_mb['globalX'], places=9)
         self.assertAlmostEqual(cam_macro_mb['globalY'], cam_explicit_mb['globalY'], places=9)
 

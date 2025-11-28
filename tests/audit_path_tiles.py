@@ -23,46 +23,22 @@ def load_path():
     return None
 
 def interpolate_camera(k1, k2, t):
-    # Matches frontend/main.js interpolateCamera logic
-    
+    # Linear interpolation in normalized global space with fractional level
     l1 = k1['level']
     l2 = k2['level']
     
-    # Interpolate Global Level
     lt = l1 + (l2 - l1) * t
-    
     level = math.floor(lt)
     zoom_offset = lt - level
     
-    # Interpolate Position (Global Coordinates)
-    factor1 = 1.0 / (2 ** l1)
-    gx1 = (k1['tileX'] + k1['offsetX']) * factor1
-    gy1 = (k1['tileY'] + k1['offsetY']) * factor1
-    
-    factor2 = 1.0 / (2 ** l2)
-    gx2 = (k2['tileX'] + k2['offsetX']) * factor2
-    gy2 = (k2['tileY'] + k2['offsetY']) * factor2
-    
-    gxt = gx1 + (gx2 - gx1) * t
-    gyt = gy1 + (gy2 - gy1) * t
-    
-    # Convert back to local
-    factor_t = 2 ** level
-    full_x = gxt * factor_t
-    full_y = gyt * factor_t
-    
-    tile_x = math.floor(full_x)
-    tile_y = math.floor(full_y)
-    offset_x = full_x % 1
-    offset_y = full_y % 1
+    gxt = k1['x'] + (k2['x'] - k1['x']) * t
+    gyt = k1['y'] + (k2['y'] - k1['y']) * t
     
     return {
         'level': level,
         'zoomOffset': zoom_offset,
-        'tileX': tile_x,
-        'tileY': tile_y,
-        'offsetX': offset_x,
-        'offsetY': offset_y
+        'x': gxt,
+        'y': gyt
     }
 
 def get_visible_tiles(camera):
@@ -80,16 +56,10 @@ def get_visible_tiles(camera):
         
         tile_size_on_screen = TILE_SIZE * display_scale
         
-        # Center point in Target Level Coordinates
-        # Camera Global Pos
-        factor_g = 1.0 / (2 ** camera['level'])
-        gx = (camera['tileX'] + camera['offsetX']) * factor_g
-        gy = (camera['tileY'] + camera['offsetY']) * factor_g
-        
-        # Target Level Pos
+        # Target Level Pos (normalized -> tile coordinates at target level)
         factor_t = 2 ** target_level
-        cam_x_t = gx * factor_t
-        cam_y_t = gy * factor_t
+        cam_x_t = camera['x'] * factor_t
+        cam_y_t = camera['y'] * factor_t
         
         tiles_in_view_x = VIEWPORT_WIDTH / tile_size_on_screen
         tiles_in_view_y = VIEWPORT_HEIGHT / tile_size_on_screen

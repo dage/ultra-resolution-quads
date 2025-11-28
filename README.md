@@ -77,9 +77,9 @@ python scripts/plot_camera_path.py datasets/mandelbrot_deep/paths.json --output 
 
 ## Path Macros
 
-Camera keyframes in `datasets/*/paths.json` can use small macros that are expanded by `shared/camera_path.js` (shared by frontend and backend):
+Camera keyframes in `datasets/*/paths.json` can use small macros that are expanded by `shared/camera_path.js` (shared by frontend and backend). The canonical camera shape is `{ globalLevel, x, y }` where `x/y` are normalized doubles in `[0,1)` and `globalLevel` is a single double (integer + fractional crossfade).
 
-- `macro: "global"` (or just provide `globalX/globalY`): supply `level`, `globalX`, and `globalY` in `[0,1]` to combine `tileX` and `offsetX`/`offsetY` into single doubles. This is easiest for the top ~30–40 levels where double precision is plenty.
+- `macro: "global"` (or just provide `x/y` directly): supply `level`, `globalX`, and `globalY` (normalized doubles) to set camera position.
 - `macro: "mandelbrot"` (aliases: `mandelbrot_point`, `mb`): supply `level`, `re`, and `im` for a point in the Mandelbrot set. Uses the renderer bounds centered at `-0.75 + 0i` with a width/height of `3.0`.
 
 Example:
@@ -112,10 +112,9 @@ Example:
 
 ## Architecture Note
 
-Standard map viewers use floating-point coordinates which break down (jitter) after zooming in by a factor of ~10^15. This project uses a **Layer-Stack Camera Model**:
+Standard map viewers use floating-point coordinates which break down (jitter) after zooming in by a factor of ~10^15. This project uses a **Layer-Stack Camera Model** with a single normalized coordinate pair and a single zoom scalar:
 
-- **Level (int)**: The discrete zoom step.
-- **Tile Index (int, int)**: The exact grid coordinate at that level.
-- **Offset (float, float)**: The fractional position [0, 1) inside a specific tile.
+- **Global Level (double)**: Zoom as a single number; integer part selects the base level, fractional part drives crossfade.
+- **Position (x, y)**: Doubles in `[0,1)` at level 0; tile indices are derived internally when selecting imagery.
 
-This guarantees pixel-perfect precision regardless of how deep you zoom.
+This keeps the API simple (no split tile/offset pairs) while still allowing deep zoom with predictable tile selection.

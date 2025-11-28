@@ -13,53 +13,65 @@
   const ZOOM_WEIGHT = 1.0; 
 
   // --- 1. Coordinate Math ---
+  // Canonical camera: { globalLevel, x, y }
+  // x/y are normalized to [0,1) at level 0. globalLevel is a double (integer + fractional crossfade).
+
+  const clamp01 = (v) => Math.min(1, Math.max(0, v));
+
+  const normalizeCamera = (cam) => {
+    if (!cam || typeof cam !== 'object') return cam;
+    const globalLevel = typeof cam.globalLevel === 'number'
+      ? cam.globalLevel
+      : (cam.level || 0) + (cam.zoomOffset || 0);
+
+    // Preferred: x/y already provided
+    if (typeof cam.x === 'number' && typeof cam.y === 'number') {
+      return {
+        globalLevel,
+        x: clamp01(cam.x),
+        y: clamp01(cam.y)
+      };
+    }
+
+    // Legacy: globalX/globalY
+    if (typeof cam.globalX === 'number' && typeof cam.globalY === 'number') {
+      return {
+        globalLevel,
+        x: clamp01(cam.globalX),
+        y: clamp01(cam.globalY)
+      };
+    }
+
+    // Fallback to origin
+    return { globalLevel, x: 0.5, y: 0.5 };
+  };
 
   const toGlobal = (k) => {
-    // Standard Global (0..1) + Level
-    const limit = Math.pow(2, k.level);
-    const gx = (k.tileX + k.offsetX) / limit;
-    const gy = (k.tileY + k.offsetY) / limit;
-    const totalLevel = k.level + (k.zoomOffset || 0);
-    
-    return { x: gx, y: gy, level: totalLevel };
+    const cam = normalizeCamera(k);
+    return { x: cam.x, y: cam.y, level: cam.globalLevel };
   };
 
   const fromGlobal = (g) => {
     const integerLevel = Math.floor(g.level);
-    const limit = Math.pow(2, integerLevel);
-    
-    const absoluteX = g.x * limit;
-    const absoluteY = g.y * limit;
-
-    const tileX = Math.floor(absoluteX);
-    const tileY = Math.floor(absoluteY);
-
     return {
-      level: integerLevel,
-      tileX: tileX,
-      tileY: tileY,
-      offsetX: absoluteX - tileX,
-      offsetY: absoluteY - tileY,
-      globalX: g.x,
-      globalY: g.y,
       globalLevel: g.level,
-      zoomOffset: g.level - integerLevel
+      x: clamp01(g.x),
+      y: clamp01(g.y),
+      globalX: clamp01(g.x),
+      globalY: clamp01(g.y),
+      globalLevel: g.level
     };
   };
 
   // --- 0. Path Macros ---
-  const clamp01 = (v) => Math.min(1, Math.max(0, v));
-
   const resolveGlobalMacro = (cam) => {
     if (typeof cam.globalX !== 'number' || typeof cam.globalY !== 'number') {
       return null;
     }
-    const level = cam.level || 0;
-    const zoomOffset = cam.zoomOffset || 0;
     const g = fromGlobal({
       x: clamp01(cam.globalX),
       y: clamp01(cam.globalY),
-      level: level + zoomOffset
+      level: cam.globalLevel || (cam.level || 0) + (cam.zoomOffset || 0)
     });
     return { ...cam, ...g, macro: undefined };
   };
@@ -80,12 +92,10 @@
     const maxIm = centerIm + height / 2;
     const gx = clamp01((cam.re - minRe) / width);
     const gy = clamp01((maxIm - cam.im) / height); // invert because tileY grows downward
-    const level = cam.level || 0;
-    const zoomOffset = cam.zoomOffset || 0;
     const g = fromGlobal({
       x: gx,
       y: gy,
-      level: level + zoomOffset
+      level: cam.globalLevel || (cam.level || 0) + (cam.zoomOffset || 0)
     });
     return { ...cam, ...g, macro: undefined };
   };
@@ -95,13 +105,13 @@
     const macro = cam.macro;
     if (macro === 'global' || (cam.globalX !== undefined && cam.globalY !== undefined)) {
       const res = resolveGlobalMacro(cam);
-      if (res) return res;
+      if (res) return normalizeCamera(res);
     }
     if (macro === 'mandelbrot' || macro === 'mandelbrot_point' || macro === 'mb') {
       const res = resolveMandelbrotMacro(cam);
-      if (res) return res;
+      if (res) return normalizeCamera(res);
     }
-    return cam;
+    return normalizeCamera(cam);
   };
 
   const visualDist = (p1, p2) => {
@@ -143,7 +153,7 @@
               dense.push(keyframes[i]);
               continue;
           }
-
+          
           const steps = Math.max(50, Math.ceil(dl * 20));
           
           for (let s = 0; s < steps; s++) {
@@ -174,7 +184,7 @@
               // Project back
               const gx_t = htx / htw;
               const gy_t = hty / htw;
-              
+          
               dense.push(fromGlobal({ x: gx_t, y: gy_t, level: l_t }));
           }
       }
@@ -362,7 +372,7 @@
         const cam = k.camera || k;
         const resolved = resolveCameraMacros(cam);
         const { macro, ...rest } = resolved || {};
-        return { ...rest };
+        return normalizeCamera({ ...rest });
     });
 
     if (normalized.length < 2) {
@@ -388,7 +398,7 @@
       const cam = kf.camera || kf;
       const resolved = resolveCameraMacros(cam);
       const { macro, ...rest } = resolved || {};
-      return { ...kf, camera: { ...rest } };
+      return { ...kf, camera: normalizeCamera({ ...rest }) };
     });
     return { ...path, keyframes };
   }

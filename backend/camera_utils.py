@@ -10,22 +10,41 @@ VIEWPORT_WIDTH = 1920
 VIEWPORT_HEIGHT = 1080
 
 
+def _extract_global_xy(cam):
+    """
+    Resolve a camera dict to normalized global coords (x, y) in [0, 1).
+    Supports legacy tile/offset/globalX fields for backward compatibility.
+    """
+    if 'x' in cam and 'y' in cam:
+        return float(cam['x']), float(cam['y'])
+    if 'globalX' in cam and 'globalY' in cam:
+        return float(cam['globalX']), float(cam['globalY'])
+    # Fallback to center
+    return 0.5, 0.5
+
+
 def _add_globals(cam):
     out = dict(cam)
-    out.setdefault('zoomOffset', 0.0)
-    lvl = out['level'] + out.get('zoomOffset', 0.0)
-    factor = 1.0 / (2 ** out['level'])
-    out['globalLevel'] = lvl
-    out['globalX'] = (out['tileX'] + out['offsetX']) * factor
-    out['globalY'] = (out['tileY'] + out['offsetY']) * factor
+    gl = out.get('globalLevel')
+    if gl is None:
+        gl = out.get('level', 0) + out.get('zoomOffset', 0.0)
+    out['globalLevel'] = gl
+    out['level'] = math.floor(gl)
+    out['zoomOffset'] = gl - out['level']
+    gx, gy = _extract_global_xy(out)
+    out['x'] = gx
+    out['y'] = gy
+    out['globalX'] = gx
+    out['globalY'] = gy
     return out
 
 
 def get_visible_tiles(camera, margin=1):
     visible = set()
-    levels = [camera['level']]
-    if camera['zoomOffset'] > 0.001:
-        levels.append(camera['level'] + 1)
+    base_level = math.floor(camera['globalLevel'])
+    levels = [base_level]
+    if camera['globalLevel'] - base_level > 1e-3:
+        levels.append(base_level + 1)
         
     # Fixed Radius Sampling
     # 1920x1080 view with 512px tiles requires ~2.2 radius to cover corners.
@@ -38,8 +57,8 @@ def get_visible_tiles(camera, margin=1):
             
         # Camera Center in Target Level Coordinates
         limit = 2 ** lvl
-        cam_x = camera['globalX'] * limit
-        cam_y = camera['globalY'] * limit
+        cam_x = camera['x'] * limit
+        cam_y = camera['y'] * limit
         
         # Scan bounding box of radius
         min_x = math.floor(cam_x - RADIUS)

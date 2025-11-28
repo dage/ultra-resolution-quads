@@ -94,23 +94,22 @@ console.log("=== Frontend Logic Test Suite ===\n");
 // Test 1: Zoom Logic
 console.log("Test 1: Zoom Logic");
 // Reset state
-state.camera.level = 0;
-state.camera.zoomOffset = 0;
+state.camera.globalLevel = 0;
 
 console.log(" -> Action: Zooming in by 0.5...");
 sandbox.zoom(0.5);
-if (state.camera.zoomOffset === 0.5) {
-    console.log(" -> PASS: Zoom offset updated to 0.5.");
+if (Math.abs(state.camera.globalLevel - 0.5) < 1e-6) {
+    console.log(" -> PASS: Global level updated to 0.5.");
 } else {
-    console.error(` -> FAIL: Zoom offset is ${state.camera.zoomOffset}`);
+    console.error(` -> FAIL: Global level is ${state.camera.globalLevel}`);
 }
 
 console.log(" -> Action: Zooming in by 0.6 (Crossing Level Boundary)...");
-sandbox.zoom(0.6); // 0.5 + 0.6 = 1.1 -> Level 1, offset 0.1
-if (state.camera.level === 1 && Math.abs(state.camera.zoomOffset - 0.1) < 0.001) {
-    console.log(" -> PASS: Level incremented to 1, Offset wrapped to 0.1.");
+sandbox.zoom(0.6); // 0.5 + 0.6 = 1.1
+if (Math.abs(state.camera.globalLevel - 1.1) < 0.001) {
+    console.log(" -> PASS: Global level advanced to 1.1.");
 } else {
-    console.error(` -> FAIL: Level: ${state.camera.level}, Offset: ${state.camera.zoomOffset}`);
+    console.error(` -> FAIL: Global level: ${state.camera.globalLevel}`);
 }
 
 // Test 2: Reconciliation & Crossfade
@@ -120,8 +119,9 @@ console.log("\nTest 2: Rendering & Reconciliation");
 state.activeDatasetId = 'test_ds';
 state.config = { max_level: 4 };
 state.viewSize = { width: 800, height: 600 };
-state.camera.level = 0;
-state.camera.zoomOffset = 0.5; 
+state.camera.globalLevel = 0.5; 
+state.camera.x = 0.5;
+state.camera.y = 0.5;
 
 // Expectation:
 // Parent (L0) Opacity: 1.0 (Fixed opacity for background stability)
@@ -168,7 +168,7 @@ else console.error(" -> FAIL: Missing layers.");
 if (parentOpacityCorrect) console.log(" -> PASS: Parent Opacity is 1.0 (Stable Background).");
 else console.error(" -> FAIL: Parent Opacity incorrect (Should be 1.0).");
 
-if (childOpacityCorrect) console.log(" -> PASS: Child Opacity matches zoomOffset (0.5).");
+if (childOpacityCorrect) console.log(" -> PASS: Child Opacity matches fractional level (0.5).");
 else console.error(" -> FAIL: Child Opacity incorrect.");
 
 // Test 3: Persistence (No Thrashing)
