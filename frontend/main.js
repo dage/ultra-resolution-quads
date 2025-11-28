@@ -13,7 +13,6 @@ const state = {
         y: 0.5,
         rotation: 0
     },
-    mode: 'experience',
     isDragging: false,
     lastMouse: { x: 0, y: 0 },
     viewSize: { width: 0, height: 0 },
@@ -49,7 +48,6 @@ const els = {
         y: document.getElementById('val-y'),
         rotation: document.getElementById('val-rot'),
     },
-    modeRadios: document.getElementsByName('mode'),
     experienceControls: document.getElementById('experience-controls'),
     btns: {
         start: document.getElementById('btn-skip-start'),
@@ -152,7 +150,7 @@ function autoSelectPath() {
     state.experience.currentElapsed = 0;
     state.experience.active = false;
     if (els.btns.playPause) els.btns.playPause.textContent = '▶';
-    updateExperience(performance.now());
+    forceSeek(0);
 }
 
 function setExperienceControlsEnabled(enabled) {
@@ -169,18 +167,6 @@ function setupEventListeners() {
     // Dataset Select
     els.datasetSelect.addEventListener('change', (e) => loadDataset(e.target.value));
     
-    // Mode Select
-    Array.from(els.modeRadios).forEach(radio => {
-        radio.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                state.mode = e.target.value;
-                els.experienceControls.style.display = state.mode === 'experience' ? 'block' : 'none';
-                updateInputAvailability();
-                updateCursor();
-            }
-        });
-    });
-
     // Path Controls
     // els.pathSelect listener removed
     
@@ -261,7 +247,12 @@ function setupEventListeners() {
     
     window.addEventListener('mousemove', (e) => {
         if (!state.isDragging) return;
-        if (state.mode !== 'explore') return;
+        
+        // Pause playback on manual interaction
+        if (state.experience.active) {
+            state.experience.active = false;
+            els.btns.playPause.textContent = '▶';
+        }
         
         const dx = e.clientX - state.lastMouse.x;
         const dy = e.clientY - state.lastMouse.y;
@@ -272,7 +263,13 @@ function setupEventListeners() {
     
     els.viewer.addEventListener('wheel', (e) => {
         e.preventDefault();
-        if (state.mode !== 'explore') return;
+        
+        // Pause playback on manual interaction
+        if (state.experience.active) {
+            state.experience.active = false;
+            els.btns.playPause.textContent = '▶';
+        }
+
         zoom(-e.deltaY * 0.002); // Zoom factor
     }, { passive: false });
     
@@ -304,16 +301,14 @@ function setupEventListeners() {
 }
 
 function updateInputAvailability() {
-    const disabled = state.mode === 'experience';
-    els.inputs.level.disabled = disabled;
-    els.inputs.x.disabled = disabled;
-    els.inputs.y.disabled = disabled;
-    els.inputs.rotation.disabled = disabled;
+    // Inputs are always available
+    els.inputs.level.disabled = false;
+    els.inputs.x.disabled = false;
+    els.inputs.y.disabled = false;
+    els.inputs.rotation.disabled = false;
     
-    if (state.mode === 'experience') {
+    if (els.experienceControls) {
         els.experienceControls.style.display = 'block';
-    } else {
-        els.experienceControls.style.display = 'none';
     }
 }
 
@@ -321,12 +316,8 @@ function updateCursor() {
     // Clear classes first
     els.viewer.classList.remove('explore', 'experience');
     
-    // Add appropriate class
-    if (state.mode === 'explore') {
-        els.viewer.classList.add('explore');
-    } else {
-        els.viewer.classList.add('experience');
-    }
+    // Always use explore cursor
+    els.viewer.classList.add('explore');
 }
 
 // Helper to seek when paused
@@ -462,9 +453,9 @@ function updateExperience(now) {
             state.experience.active = false;
             els.btns.playPause.textContent = '▶';
         }
-    }
 
-    updateExperienceWithElapsed(state.experience.currentElapsed);
+        updateExperienceWithElapsed(state.experience.currentElapsed);
+    }
 
     // Speed Logging
     if (state.experience.active && now - lastSpeedLogTime > 1000) { // Log approximately every second when active
@@ -593,9 +584,7 @@ function updateLayer(level, opacity, targetTiles) {
 }
 
 function renderLoop() {
-    if (state.mode === 'experience') {
-        updateExperience(performance.now());
-    }
+    updateExperience(performance.now());
     
     // Apply global rotation
     if (els.layers) {

@@ -20,6 +20,19 @@
             </div>
 
             <div class="panel">
+                <div id="experience-controls">
+                    <div class="playback-controls" style="margin-top: 0;">
+                        <button class="icon-btn" id="btn-skip-start" title="Start">|◀</button>
+                        <button class="icon-btn" id="btn-skip-back" title="-10s">◀◀</button>
+                        <button class="icon-btn" id="btn-play-pause" title="Play/Pause">▶</button>
+                        <button class="icon-btn" id="btn-skip-fwd" title="+10s">▶▶</button>
+                        <button class="icon-btn" id="btn-skip-end" title="End">▶|</button>
+                    </div>
+                    <input type="range" id="in-time" min="0" max="1" step="0.001" value="0">
+                </div>
+            </div>
+
+            <div class="panel">
                 <h2>Camera</h2>
                 <div class="control-group">
                     <label>Level: <span id="val-level">0</span></label>
@@ -36,24 +49,6 @@
                 <div class="control-group">
                     <label>Rot: <span id="val-rot">0.00</span></label>
                     <input type="range" id="in-rot" min="0" max="6.28318" step="0.01" value="0">
-                </div>
-            </div>
-
-            <div class="panel">
-                <h2>Mode</h2>
-                <div class="radio-group">
-                    <label><input type="radio" name="mode" value="experience" checked> Experience</label>
-                    <label><input type="radio" name="mode" value="explore"> Explore</label>
-                </div>
-                <div id="experience-controls" style="display:none;">
-                    <div class="playback-controls">
-                        <button class="icon-btn" id="btn-skip-start" title="Start">|◀</button>
-                        <button class="icon-btn" id="btn-skip-back" title="-10s">◀◀</button>
-                        <button class="icon-btn" id="btn-play-pause" title="Play/Pause">▶</button>
-                        <button class="icon-btn" id="btn-skip-fwd" title="+10s">▶▶</button>
-                        <button class="icon-btn" id="btn-skip-end" title="End">▶|</button>
-                    </div>
-                    <input type="range" id="in-time" min="0" max="1" step="0.001" value="0">
                 </div>
             </div>
         </div>
