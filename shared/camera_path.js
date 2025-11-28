@@ -11,9 +11,10 @@
 
   const MAX_LEVEL = 20;
   const ZOOM_WEIGHT = 1.0; 
+  const ROTATION_WEIGHT = 1.0;
 
   // --- 1. Coordinate Math ---
-  // Canonical camera: { globalLevel, x, y }
+  // Canonical camera: { globalLevel, x, y, rotation }
   // x/y are normalized to [0,1) at level 0. globalLevel is a double (integer + fractional crossfade).
 
   const clamp01 = (v) => Math.min(1, Math.max(0, v));
@@ -29,7 +30,8 @@
       return {
         globalLevel,
         x: clamp01(cam.x),
-        y: clamp01(cam.y)
+        y: clamp01(cam.y),
+        rotation: cam.rotation || 0
       };
     }
 
@@ -38,17 +40,18 @@
       return {
         globalLevel,
         x: clamp01(cam.globalX),
-        y: clamp01(cam.globalY)
+        y: clamp01(cam.globalY),
+        rotation: cam.rotation || 0
       };
     }
 
     // Fallback to origin
-    return { globalLevel, x: 0.5, y: 0.5 };
+    return { globalLevel, x: 0.5, y: 0.5, rotation: cam.rotation || 0 };
   };
 
   const toGlobal = (k) => {
     const cam = normalizeCamera(k);
-    return { x: cam.x, y: cam.y, level: cam.globalLevel };
+    return { x: cam.x, y: cam.y, level: cam.globalLevel, rotation: cam.rotation };
   };
 
   const fromGlobal = (g) => {
@@ -57,6 +60,7 @@
       globalLevel: g.level,
       x: clamp01(g.x),
       y: clamp01(g.y),
+      rotation: g.rotation || 0,
       globalX: clamp01(g.x),
       globalY: clamp01(g.y),
       globalLevel: g.level
@@ -71,7 +75,8 @@
     const g = fromGlobal({
       x: clamp01(cam.globalX),
       y: clamp01(cam.globalY),
-      level: cam.globalLevel || (cam.level || 0) + (cam.zoomOffset || 0)
+      level: cam.globalLevel || (cam.level || 0) + (cam.zoomOffset || 0),
+      rotation: cam.rotation || 0
     });
     return { ...cam, ...g, macro: undefined };
   };
@@ -95,7 +100,8 @@
     const g = fromGlobal({
       x: gx,
       y: gy,
-      level: cam.globalLevel || (cam.level || 0) + (cam.zoomOffset || 0)
+      level: cam.globalLevel || (cam.level || 0) + (cam.zoomOffset || 0),
+      rotation: cam.rotation || 0
     });
     return { ...cam, ...g, macro: undefined };
   };
@@ -121,8 +127,9 @@
     const dx = (p1.x - p2.x) * scale;
     const dy = (p1.y - p2.y) * scale;
     const dl = (p1.level - p2.level) * ZOOM_WEIGHT; 
+    const dr = ((p1.rotation || 0) - (p2.rotation || 0)) * ROTATION_WEIGHT;
     
-    return Math.sqrt(dx * dx + dy * dy + dl * dl);
+    return Math.sqrt(dx * dx + dy * dy + dl * dl + dr * dr);
   };
 
   // --- 2. Densification (The Fix) ---
@@ -162,7 +169,8 @@
               // Linear Interpolation of Level (Visual Speed)
               const l_t = p1.level + t * (p2.level - p1.level);
               const w_t = Math.pow(2, l_t);
-              
+              const r_t = (p1.rotation || 0) + t * ((p2.rotation || 0) - (p1.rotation || 0));
+
               // Projective Interpolation of Position (Geometry)
               let alpha;
               if (Math.abs(w2 - w1) < 1e-9) {
@@ -185,7 +193,7 @@
               const gx_t = htx / htw;
               const gy_t = hty / htw;
           
-              dense.push(fromGlobal({ x: gx_t, y: gy_t, level: l_t }));
+              dense.push(fromGlobal({ x: gx_t, y: gy_t, level: l_t, rotation: r_t }));
           }
       }
       dense.push(keyframes[keyframes.length - 1]);
@@ -284,6 +292,7 @@
       this.splineX = new Spline1D(this.keyframeTimes, points.map(p => p.x));
       this.splineY = new Spline1D(this.keyframeTimes, points.map(p => p.y));
       this.splineL = new Spline1D(this.keyframeTimes, points.map(p => p.level));
+      this.splineR = new Spline1D(this.keyframeTimes, points.map(p => p.rotation || 0));
 
       this.buildLUT();
     }
@@ -295,7 +304,8 @@
       let prevP = { 
         x: this.splineX.at(0), 
         y: this.splineY.at(0), 
-        level: this.splineL.at(0) 
+        level: this.splineL.at(0),
+        rotation: this.splineR.at(0)
       };
 
       if (this.maxTime <= 1e-9) {
@@ -309,7 +319,8 @@
         const currP = {
           x: this.splineX.at(t),
           y: this.splineY.at(t),
-          level: this.splineL.at(t)
+          level: this.splineL.at(t),
+          rotation: this.splineR.at(t)
         };
         
         const d = visualDist(prevP, currP);
@@ -329,7 +340,8 @@
           const g = {
             x: this.splineX.at(0),
             y: this.splineY.at(0),
-            level: this.splineL.at(0)
+            level: this.splineL.at(0),
+            rotation: this.splineR.at(0)
           };
           return fromGlobal(g);
       }
@@ -359,7 +371,8 @@
       const g = {
         x: this.splineX.at(t),
         y: this.splineY.at(t),
-        level: this.splineL.at(t)
+        level: this.splineL.at(t),
+        rotation: this.splineR.at(t)
       };
 
       return fromGlobal(g);

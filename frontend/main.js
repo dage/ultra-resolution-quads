@@ -10,7 +10,8 @@ const state = {
     camera: {
         globalLevel: 0,
         x: 0.5,
-        y: 0.5
+        y: 0.5,
+        rotation: 0
     },
     mode: 'experience',
     isDragging: false,
@@ -39,12 +40,14 @@ const els = {
         level: document.getElementById('in-level'),
         x: document.getElementById('in-x'),
         y: document.getElementById('in-y'),
+        rotation: document.getElementById('in-rot'),
         time: document.getElementById('in-time'),
     },
     vals: {
         level: document.getElementById('val-level'),
         x: document.getElementById('val-x'),
         y: document.getElementById('val-y'),
+        rotation: document.getElementById('val-rot'),
     },
     modeRadios: document.getElementsByName('mode'),
     experienceControls: document.getElementById('experience-controls'),
@@ -71,6 +74,10 @@ async function init() {
         
         setupEventListeners();
         updateCursor();
+        
+        // Initialize transform origin for rotation
+        if (els.layers) els.layers.style.transformOrigin = 'center center';
+        
         requestAnimationFrame(renderLoop);
     } catch (e) {
         console.error("Failed to init:", e);
@@ -279,6 +286,10 @@ function setupEventListeners() {
     });
     els.inputs.x.addEventListener('input', (e) => { state.camera.x = clamp01(parseFloat(e.target.value)); updateUI(); });
     els.inputs.y.addEventListener('input', (e) => { state.camera.y = clamp01(parseFloat(e.target.value)); updateUI(); });
+    els.inputs.rotation.addEventListener('input', (e) => { 
+        state.camera.rotation = parseFloat(e.target.value); 
+        updateUI(); 
+    });
 
     // Reset Button
     // els.btnReset.addEventListener('click', resetCamera);
@@ -297,6 +308,7 @@ function updateInputAvailability() {
     els.inputs.level.disabled = disabled;
     els.inputs.x.disabled = disabled;
     els.inputs.y.disabled = disabled;
+    els.inputs.rotation.disabled = disabled;
     
     if (state.mode === 'experience') {
         els.experienceControls.style.display = 'block';
@@ -337,8 +349,21 @@ function pan(dx, dy) {
     // Compute delta in normalized global units. One tile at current level spans 1 / 2^level.
     const scale = Math.pow(2, state.camera.globalLevel);
     const worldPerPixel = 1 / (LOGICAL_TILE_SIZE * scale);
-    state.camera.x = clamp01(state.camera.x - dx * worldPerPixel);
-    state.camera.y = clamp01(state.camera.y - dy * worldPerPixel);
+    
+    // Rotate vector according to camera rotation
+    // Screen to World rotation is +rot (because World to Screen is -rot).
+    // We drag the world, so the camera moves in the opposite direction of the drag.
+    // dCamera_Screen = (-dx, -dy)
+    // dCamera_World = Rot(r) * dCamera_Screen
+    // dx_w (subtracted from cam.x) should be: dx * cos - dy * sin
+    // dy_w (subtracted from cam.y) should be: dx * sin + dy * cos
+    
+    const r = state.camera.rotation || 0;
+    const dx_w = dx * Math.cos(r) - dy * Math.sin(r);
+    const dy_w = dx * Math.sin(r) + dy * Math.cos(r);
+
+    state.camera.x = clamp01(state.camera.x - dx_w * worldPerPixel);
+    state.camera.y = clamp01(state.camera.y - dy_w * worldPerPixel);
     updateUI();
 }
 
@@ -354,11 +379,13 @@ function updateUI() {
     els.vals.level.textContent = lvl + " (+ " + zoomOffset.toFixed(2) + ")";
     if (els.vals.x) els.vals.x.textContent = state.camera.x.toFixed(6);
     if (els.vals.y) els.vals.y.textContent = state.camera.y.toFixed(6);
+    if (els.vals.rotation) els.vals.rotation.textContent = (state.camera.rotation || 0).toFixed(2);
     
     // Only update inputs if they are not focused to allow editing without overwrite
     if (document.activeElement !== els.inputs.level) els.inputs.level.value = lvl;
     if (document.activeElement !== els.inputs.x) els.inputs.x.value = state.camera.x;
     if (document.activeElement !== els.inputs.y) els.inputs.y.value = state.camera.y;
+    if (document.activeElement !== els.inputs.rotation) els.inputs.rotation.value = state.camera.rotation || 0;
 }
 
 // Experience (Path Playback) Logic
@@ -374,7 +401,8 @@ function cameraToGlobal(camera) {
     return {
         x: camera.x,
         y: camera.y,
-        level: camera.globalLevel
+        level: camera.globalLevel,
+        rotation: camera.rotation || 0
     };
 }
 
@@ -394,9 +422,10 @@ function segmentDurationMs(k1, k2) {
     const dx = (g1.x - g2.x) * scale;
     const dy = (g1.y - g2.y) * scale;
     const dl = Math.abs(l1 - l2);
+    const dr = Math.abs(g1.rotation - g2.rotation);
     
     // Visual Distance = Hypotenuse of Pan (in screens) and Zoom (in levels)
-    const dist = Math.sqrt(dx*dx + dy*dy + dl*dl);
+    const dist = Math.sqrt(dx*dx + dy*dy + dl*dl + dr*dr);
     
     const durationSeconds = dist / PATH_SPEED.visualUnitsPerSecond;
     return Math.max(durationSeconds * 1000, PATH_SPEED.minSegmentMs);
@@ -487,6 +516,7 @@ function updateExperienceWithElapsed(elapsed) {
     state.camera.globalLevel = cam.globalLevel;
     state.camera.x = cam.x;
     state.camera.y = cam.y;
+    state.camera.rotation = cam.rotation || 0;
 
     updateUI();
 
@@ -565,6 +595,12 @@ function updateLayer(level, opacity, targetTiles) {
 function renderLoop() {
     if (state.mode === 'experience') {
         updateExperience(performance.now());
+    }
+    
+    // Apply global rotation
+    if (els.layers) {
+        const rot = state.camera.rotation || 0;
+        els.layers.style.transform = `rotate(${-rot}rad)`;
     }
 
     if (!state.activeDatasetId || !state.config) {

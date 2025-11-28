@@ -13,6 +13,7 @@ const MAIN_JS_PATH = path.join(PROJECT_ROOT, 'frontend', 'main.js');
 
 // Mock DOM API
 const document = {
+    activeElement: null,
     getElementById: (id) => ({
         addEventListener: () => {},
         style: {},
@@ -127,7 +128,8 @@ state.camera.y = 0.5;
 const layersChildren = [];
 sandbox.els.layers = {
     appendChild: (child) => layersChildren.push(child),
-    innerHTML: ''
+    innerHTML: '',
+    style: {}
 };
 
 // Run Render Loop once

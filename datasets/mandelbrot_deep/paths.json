@@ -1,12 +1,16 @@
 {
   "paths": [
     {
-      "id": "macro_mandelbrot_double",
-      "name": "Mandelbrot Macro Double (Seahorse + Elephant)",
+      "id": "mandelbrot_grand_tour",
+      "name": "Mandelbrot Grand Tour",
       "keyframes": [
-        { "camera": { "macro": "mandelbrot", "level": 12, "re": -0.743643887037151, "im": -0.13182590420533, "note": "Seahorse Valley minibrot" } },
-        { "camera": { "macro": "mandelbrot", "level": 1, "re": -0.7445359435185754, "im": -0.009408452102665, "note": "Midpoint between seahorse and elephant (level 0)" } },
-        { "camera": { "macro": "mandelbrot", "level": 12, "re": -0.745428, "im": 0.113009, "note": "Elephant Valley bulb" } }
+        { "camera": { "macro": "mandelbrot", "level": 12, "re": -0.743643887037151, "im": -0.13182590420533, "rotation": 0, "note": "Start: Deep in Seahorse Valley (Lower)" } },
+        { "camera": { "macro": "mandelbrot", "level": 1, "re": -0.75, "im": 0.0, "rotation": 3.14159, "note": "Zoom out to Real Axis Bridge (Flip 180)" } },
+        { "camera": { "macro": "mandelbrot", "level": 10, "re": -0.7436438, "im": 0.1318259, "rotation": 6.28318, "note": "Dive into Seahorse Valley (Upper)" } },
+        { "camera": { "macro": "mandelbrot", "level": 18, "re": -0.74364388703, "im": 0.13182590420, "rotation": 18.849, "note": "Deep Spiral Dive (Spinning to 6*PI)" } },
+        { "camera": { "macro": "mandelbrot", "level": 0, "re": -0.5, "im": 0.0, "rotation": 18.849, "note": "Zoom out to Full Set" } },
+        { "camera": { "macro": "mandelbrot", "level": 2, "re": 0.25, "im": 0.0, "rotation": 19.5, "note": "Approach Elephant Valley" } },
+        { "camera": { "macro": "mandelbrot", "level": 12, "re": 0.275, "im": 0.005, "rotation": 21.0, "note": "Deep in Elephant Valley" } }
       ]
     }
   ]
