@@ -48,7 +48,6 @@ const els = {
     },
     modeRadios: document.getElementsByName('mode'),
     experienceControls: document.getElementById('experience-controls'),
-    btnReset: document.getElementById('btn-reset'),
     btns: {
         start: document.getElementById('btn-skip-start'),
         back: document.getElementById('btn-skip-back'),
@@ -157,15 +156,6 @@ function setExperienceControlsEnabled(enabled) {
         els.experienceControls.style.opacity = opacity;
         els.experienceControls.style.pointerEvents = pointerEvents;
     }
-}
-
-function resetCamera() {
-    state.camera = {
-        globalLevel: 0,
-        x: 0.5,
-        y: 0.5
-    };
-    updateUI();
 }
 
 function setupEventListeners() {
@@ -291,7 +281,7 @@ function setupEventListeners() {
     els.inputs.y.addEventListener('input', (e) => { state.camera.y = clamp01(parseFloat(e.target.value)); updateUI(); });
 
     // Reset Button
-    els.btnReset.addEventListener('click', resetCamera);
+    // els.btnReset.addEventListener('click', resetCamera);
 
     window.addEventListener('resize', updateViewSize);
     
