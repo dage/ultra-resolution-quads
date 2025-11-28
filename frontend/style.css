@@ -57,6 +57,12 @@ body, html {
     width: 512px;
     height: 512px;
     image-rendering: pixelated; /* For debug sharpness */
+    box-sizing: border-box; /* Ensure border is included in width/height if we add one */
+}
+
+/* Debug Mode Styles */
+body.debug .tile {
+    border: 1px dashed rgba(255, 0, 0, 0.5);
 }
 
 #ui {

@@ -35,6 +35,7 @@ const els = {
     viewer: document.getElementById('viewer'),
     layers: document.getElementById('layers-container'),
     datasetSelect: document.getElementById('dataset-select'),
+    chkDebug: document.getElementById('chk-debug'),
     inputs: {
         level: document.getElementById('in-level'),
         x: document.getElementById('in-x'),
@@ -166,6 +167,17 @@ function setExperienceControlsEnabled(enabled) {
 function setupEventListeners() {
     // Dataset Select
     els.datasetSelect.addEventListener('change', (e) => loadDataset(e.target.value));
+    
+    // Debug Mode Toggle
+    if (els.chkDebug) {
+        els.chkDebug.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                document.body.classList.add('debug');
+            } else {
+                document.body.classList.remove('debug');
+            }
+        });
+    }
     
     // Path Controls
     // els.pathSelect listener removed
