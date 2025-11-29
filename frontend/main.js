@@ -62,26 +62,22 @@ const els = {
 
 // Initialization
 async function init() {
-    try {
-        const resp = await fetch(`${BASE_DATA_URI}/datasets/index.json`);
-        const data = await resp.json();
-        state.datasets = data.datasets;
-        
-        populateDatasetSelect();
-        if (state.datasets.length > 0) {
-            loadDataset(state.datasets[0].id);
-        }
-        
-        setupEventListeners();
-        updateCursor();
-        
-        // Initialize transform origin for rotation
-        if (els.layers) els.layers.style.transformOrigin = 'center center';
-        
-        requestAnimationFrame(renderLoop);
-    } catch (e) {
-        console.error("Failed to init:", e);
+    const resp = await fetch(`${BASE_DATA_URI}/datasets/index.json`);
+    const data = await resp.json();
+    state.datasets = data.datasets;
+    
+    populateDatasetSelect();
+    if (state.datasets.length > 0) {
+        loadDataset(state.datasets[0].id);
     }
+    
+    setupEventListeners();
+    updateCursor();
+    
+    // Initialize transform origin for rotation
+    if (els.layers) els.layers.style.transformOrigin = 'center center';
+    
+    requestAnimationFrame(renderLoop);
 }
 
 function populateDatasetSelect() {
@@ -96,27 +92,22 @@ function populateDatasetSelect() {
 
 async function loadDataset(id) {
     state.activeDatasetId = id;
+    // Load Config
+    const respConfig = await fetch(`${BASE_DATA_URI}/datasets/${id}/config.json`);
+    state.config = await respConfig.json();
+    
+    // Load Paths
     try {
-        // Load Config
-        const respConfig = await fetch(`${BASE_DATA_URI}/datasets/${id}/config.json`);
-        state.config = await respConfig.json();
-        
-        // Load Paths
-        try {
-            const respPaths = await fetch(`${BASE_DATA_URI}/datasets/${id}/paths.json`);
-            const pathsData = await respPaths.json();
-            state.paths = pathsData.paths || [];
-            autoSelectPath();
-        } catch (e) {
-            console.log("No paths found or error loading paths", e);
-            state.paths = [];
-            autoSelectPath();
-        }
-
-        resetCamera();
-    } catch (e) {
-        console.error("Failed to load dataset config:", e);
+        const respPaths = await fetch(`${BASE_DATA_URI}/datasets/${id}/paths.json`);
+        const pathsData = await respPaths.json();
+        state.paths = pathsData.paths || [];
+        autoSelectPath();
+    } catch {
+        state.paths = [];
+        autoSelectPath();
     }
+
+    resetCamera();
 }
 
 function setActivePath(path) {
@@ -130,7 +121,6 @@ function setActivePath(path) {
         return;
     }
     if (typeof CameraPath === 'undefined') {
-        console.error('CameraPath module not loaded');
         state.pathSampler = null;
         return;
     }
@@ -195,9 +185,6 @@ function setupEventListeners() {
             // No specific action needed as currentElapsed is updated in render loop or maintained
         } else {
             // Play
-            state.debugSamples = [];
-            state.lastDebugSampleTime = 0;
-
             // If we are at the end, restart
             if (state.experience.currentElapsed >= state.experience.totalDuration) {
                 state.experience.currentElapsed = 0;
@@ -316,6 +303,29 @@ function setupEventListeners() {
     updateViewSize();
 }
 
+function resetCamera() {
+    const firstKeyframeCam = state.activePath && state.activePath.keyframes && state.activePath.keyframes.length > 0
+        ? state.activePath.keyframes[0].camera
+        : null;
+
+    const cam = firstKeyframeCam || {
+        globalLevel: 0,
+        x: 0.5,
+        y: 0.5,
+        rotation: 0
+    };
+
+    state.camera.globalLevel = cam.globalLevel ?? cam.level ?? 0;
+    state.camera.x = cam.x ?? 0.5;
+    state.camera.y = cam.y ?? 0.5;
+    state.camera.rotation = cam.rotation || 0;
+
+    state.experience.currentElapsed = 0;
+    state.experience.active = false;
+    updateUI();
+    forceSeek(0);
+}
+
 function updateInputAvailability() {
     // Inputs are always available
     els.inputs.level.disabled = false;
@@ -401,9 +411,6 @@ const PATH_SPEED = {
     minSegmentMs: 300
 };
 
-let lastSpeedLogTime = 0; // For debug logging
-let prevCameraStateForLog = null; // For instantaneous speed calculation
-
 function cameraToGlobal(camera) {
     return {
         x: camera.x,
@@ -472,44 +479,6 @@ function updateExperience(now) {
 
         updateExperienceWithElapsed(state.experience.currentElapsed);
     }
-
-    // Speed Logging
-    if (state.experience.active && now - lastSpeedLogTime > 1000) { // Log approximately every second when active
-        if (prevCameraStateForLog) {
-            const currentProgress = state.experience.currentElapsed / state.experience.totalDuration;
-            // Get previous progress for accurate dt
-            const prevElapsed = Math.max(0, state.experience.currentElapsed - (now - lastSpeedLogTime));
-            const prevProgress = prevElapsed / state.experience.totalDuration;
-
-            const camCurrent = state.pathSampler.cameraAtProgress(currentProgress);
-            const camPrev = state.pathSampler.cameraAtProgress(prevProgress);
-
-            if (camCurrent && camPrev) {
-                const l1 = camPrev.globalLevel;
-                const l2 = camCurrent.globalLevel;
-                const l_avg = (l1 + l2) / 2;
-                const scale = Math.pow(2, l_avg);
-
-                const dx = (camCurrent.x - camPrev.x) * scale;
-                const dy = (camCurrent.y - camPrev.y) * scale;
-                const dl = l2 - l1;
-
-                const dt_ms = now - lastSpeedLogTime;
-                // Convert to units per second (visual units or levels)
-                const inst_visual_speed = Math.sqrt(dx*dx + dy*dy + dl*dl) / (dt_ms / 1000);
-                const inst_level_speed = dl / (dt_ms / 1000);
-                
-                console.log(`[Playback Speed] Lvl=${camCurrent.globalLevel.toFixed(2)} | Visual=${inst_visual_speed.toFixed(2)} unit/s | Level=${inst_level_speed.toFixed(2)} lvl/s`);
-            }
-        }
-        lastSpeedLogTime = now;
-        // Capture a snapshot of the current camera state, including global values
-        prevCameraStateForLog = { 
-            globalLevel: state.camera.globalLevel, 
-            x: state.camera.x,
-            y: state.camera.y
-        };
-    }
 }
 
 function updateExperienceWithElapsed(elapsed) {
@@ -535,7 +504,6 @@ function updateExperienceWithElapsed(elapsed) {
 }
 
 // Rendering
-const tileCache = {}; 
 const activeTileElements = new Map(); // Key: "level|x|y", Value: DOM Element
 
 function getTileImage(datasetId, level, x, y) {
@@ -555,10 +523,7 @@ function getTileImage(datasetId, level, x, y) {
 function updateLayer(level, opacity, targetTiles) {
     if (opacity <= 0.001) return;
 
-    if (typeof ViewUtils === 'undefined') {
-        console.error("ViewUtils not loaded");
-        return;
-    }
+    if (typeof ViewUtils === 'undefined') return;
 
     // Use shared logic to find exactly which tiles are visible
     const visible = ViewUtils.getVisibleTilesForLevel(
@@ -644,15 +609,11 @@ function renderLoop() {
     updateLayer(baseLevel + 1, childOpacity, targetTiles);
     
     // Reconciliation
-    let removedCount = 0;
-    let createdCount = 0;
-    
     // 1. Remove tiles not in target
     for (const [key, el] of activeTileElements) {
         if (!targetTiles.has(key)) {
             el.remove();
             activeTileElements.delete(key);
-            removedCount++;
         }
     }
     
@@ -663,7 +624,6 @@ function renderLoop() {
             el = getTileImage(props.datasetId, props.level, props.x, props.y);
             els.layers.appendChild(el);
             activeTileElements.set(key, el);
-            createdCount++;
         }
         
         // Update styles: position via translate, scale via transform.
