@@ -139,7 +139,7 @@ def generate_full_pyramid(renderer, dataset_id, max_level):
 
 import camera_utils
 
-def generate_tiles_along_path(renderer, dataset_id, paths, margin=1, steps=2000):
+def generate_tiles_along_path(renderer, dataset_id, paths, steps=2000):
     print(f"Generating tiles along paths for {dataset_id}...")
     base_path = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles')
     
