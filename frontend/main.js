@@ -143,6 +143,7 @@ function autoSelectPath() {
     state.experience.active = false;
     if (els.btns.playPause) els.btns.playPause.textContent = '▶';
     forceSeek(0);
+    updateInputAvailability();
 }
 
 function setExperienceControlsEnabled(enabled) {
@@ -194,6 +195,7 @@ function setupEventListeners() {
             state.experience.startTime = performance.now() - state.experience.currentElapsed;
             els.btns.playPause.textContent = '⏸';
         }
+        updateInputAvailability();
     });
 
     // Skip Buttons
@@ -203,6 +205,7 @@ function setupEventListeners() {
         updateExperience(state.experience.active ? performance.now() : 0); 
         // If paused, we need to force update with a fake 'now' that respects the 0 elapsed
         if (!state.experience.active) forceSeek(0);
+        updateInputAvailability();
     });
 
     els.btns.end.addEventListener('click', () => {
@@ -210,6 +213,7 @@ function setupEventListeners() {
         state.experience.active = false;
         els.btns.playPause.textContent = '▶';
         forceSeek(state.experience.totalDuration);
+        updateInputAvailability();
     });
     
     els.btns.back.addEventListener('click', () => {
@@ -218,6 +222,7 @@ function setupEventListeners() {
         state.experience.currentElapsed = t;
         if (state.experience.active) state.experience.startTime = performance.now() - t;
         else forceSeek(t);
+        updateInputAvailability();
     });
 
     els.btns.fwd.addEventListener('click', () => {
@@ -226,6 +231,7 @@ function setupEventListeners() {
         state.experience.currentElapsed = t;
         if (state.experience.active) state.experience.startTime = performance.now() - t;
         else forceSeek(t);
+        updateInputAvailability();
     });
 
     // Scrubber
@@ -238,6 +244,7 @@ function setupEventListeners() {
         
         state.experience.currentElapsed = scrubbedTime;
         forceSeek(scrubbedTime);
+        updateInputAvailability();
     });
 
     // Mouse Interactions
@@ -255,6 +262,7 @@ function setupEventListeners() {
         if (state.experience.active) {
             state.experience.active = false;
             els.btns.playPause.textContent = '▶';
+            updateInputAvailability();
         }
         
         const dx = e.clientX - state.lastMouse.x;
@@ -271,6 +279,7 @@ function setupEventListeners() {
         if (state.experience.active) {
             state.experience.active = false;
             els.btns.playPause.textContent = '▶';
+            updateInputAvailability();
         }
 
         zoom(-e.deltaY * 0.002); // Zoom factor
@@ -323,15 +332,16 @@ function resetCamera() {
     state.experience.currentElapsed = 0;
     state.experience.active = false;
     updateUI();
+    updateInputAvailability();
     forceSeek(0);
 }
 
 function updateInputAvailability() {
-    // Inputs are always available
-    els.inputs.level.disabled = false;
-    els.inputs.x.disabled = false;
-    els.inputs.y.disabled = false;
-    els.inputs.rotation.disabled = false;
+    const disabled = !!state.experience.active;
+    els.inputs.level.disabled = disabled;
+    els.inputs.x.disabled = disabled;
+    els.inputs.y.disabled = disabled;
+    els.inputs.rotation.disabled = disabled;
     
     if (els.experienceControls) {
         els.experienceControls.style.display = 'block';
@@ -475,6 +485,7 @@ function updateExperience(now) {
             state.experience.currentElapsed = state.experience.totalDuration;
             state.experience.active = false;
             els.btns.playPause.textContent = '▶';
+            updateInputAvailability();
         }
 
         updateExperienceWithElapsed(state.experience.currentElapsed);
