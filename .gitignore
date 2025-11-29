@@ -1,11 +1,6 @@
-# Specific dataset ignores
-datasets/debug_quadtile/*
-!datasets/debug_quadtile/config.json
-!datasets/debug_quadtile/paths.json
-
-datasets/mandelbrot_deep/*
-!datasets/mandelbrot_deep/config.json
-!datasets/mandelbrot_deep/paths.json
+# Ignore everything under datasets/*/ except .json files
+datasets/*/
+!datasets/*/*.json
 
 # General ignores
 **/__pycache__/
