@@ -65,6 +65,26 @@ body.debug .tile {
     border: 1px dashed rgba(255, 0, 0, 0.5);
 }
 
+#debug-stats {
+    display: none;
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    color: #0f0;
+    font-family: monospace;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.4); /* Made a little more transparent */
+    padding: 5px;
+    pointer-events: none;
+    z-index: 1000;
+    white-space: pre;
+    border-radius: 5px; /* Added rounded corners */
+}
+
+body.debug #debug-stats {
+    display: block;
+}
+
 #ui {
     width: 300px;
     background-color: #222;

@@ -49,6 +49,7 @@ const els = {
         y: document.getElementById('val-y'),
         rotation: document.getElementById('val-rot'),
     },
+    debugStats: document.getElementById('debug-stats'),
     experienceControls: document.getElementById('experience-controls'),
     btns: {
         start: document.getElementById('btn-skip-start'),
@@ -625,12 +626,15 @@ function renderLoop() {
     updateLayer(baseLevel + 1, childOpacity, targetTiles);
     
     // Reconciliation
+    let removedCount = 0;
+    let createdCount = 0;
     
     // 1. Remove tiles not in target
     for (const [key, el] of activeTileElements) {
         if (!targetTiles.has(key)) {
             el.remove();
             activeTileElements.delete(key);
+            removedCount++;
         }
     }
     
@@ -641,6 +645,7 @@ function renderLoop() {
             el = getTileImage(props.datasetId, props.level, props.x, props.y);
             els.layers.appendChild(el);
             activeTileElements.set(key, el);
+            createdCount++;
         }
         
         // Update styles: position via translate, scale via transform.
@@ -650,6 +655,10 @@ function renderLoop() {
         el.style.transformOrigin = 'top left';
         el.style.opacity = props.opacity.toFixed(3);
         el.style.zIndex = props.zIndex;
+    }
+    
+    if (document.body.classList.contains('debug') && els.debugStats) {
+        els.debugStats.textContent = `Tiles: ${activeTileElements.size}`;
     }
     
     requestAnimationFrame(renderLoop);

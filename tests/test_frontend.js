@@ -14,6 +14,13 @@ const MAIN_JS_PATH = path.join(PROJECT_ROOT, 'frontend', 'main.js');
 // Mock DOM API
 const document = {
     activeElement: null,
+    body: {
+        classList: {
+            add: () => {},
+            remove: () => {},
+            contains: () => false
+        }
+    },
     getElementById: (id) => ({
         addEventListener: () => {},
         style: {},
