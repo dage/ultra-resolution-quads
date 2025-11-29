@@ -523,8 +523,23 @@ function getTileImage(datasetId, level, x, y) {
     img.className = 'tile';
     img.style.width = `${LOGICAL_TILE_SIZE}px`;
     img.style.height = `${LOGICAL_TILE_SIZE}px`;
+    img.style.transformOrigin = 'top left';
+    img._tileCache = { transform: '', opacity: '', zIndex: '' }; // Used to avoid redundant style writes
     img.onerror = () => { img.style.display = 'none'; };
     return img;
+}
+
+// Simple helper to batch DOM inserts so we touch the tree once per frame.
+function createTileBatch(container) {
+    const fragment = document.createDocumentFragment();
+    return {
+        add(el) { fragment.appendChild(el); },
+        flush() {
+            if (fragment.childNodes.length) {
+                container.appendChild(fragment);
+            }
+        }
+    };
 }
 
 function updateLayer(level, opacity, targetTiles) {
@@ -616,6 +631,8 @@ function renderLoop() {
     updateLayer(baseLevel + 1, childOpacity, targetTiles);
     
     // Reconciliation
+    const batch = createTileBatch(els.layers);
+
     // 1. Remove tiles not in target
     for (const [key, el] of activeTileElements) {
         if (!targetTiles.has(key)) {
@@ -629,18 +646,31 @@ function renderLoop() {
         let el = activeTileElements.get(key);
         if (!el) {
             el = getTileImage(props.datasetId, props.level, props.x, props.y);
-            els.layers.appendChild(el);
+            batch.add(el);
             activeTileElements.set(key, el);
         }
         
         // Update styles: position via translate, scale via transform.
         // We avoid rounding here to prevent per-tile rounding differences
         // from introducing tiny seams between tiles.
-        el.style.transform = `translate(${props.tx}px, ${props.ty}px) scale(${props.scale})`;
-        el.style.transformOrigin = 'top left';
-        el.style.opacity = props.opacity.toFixed(3);
-        el.style.zIndex = props.zIndex;
+        const cached = el._tileCache || {};
+        const nextTransform = `translate(${props.tx}px, ${props.ty}px) scale(${props.scale})`;
+        const nextOpacity = props.opacity.toFixed(3);
+        const nextZ = props.zIndex;
+
+        if (cached.transform !== nextTransform) el.style.transform = nextTransform;
+        if (cached.opacity !== nextOpacity) el.style.opacity = nextOpacity;
+        if (cached.zIndex !== nextZ) el.style.zIndex = nextZ;
+
+        el._tileCache = {
+            transform: nextTransform,
+            opacity: nextOpacity,
+            zIndex: nextZ
+        };
     }
+
+    // Apply any new tiles in a single DOM append to minimize layout/paint churn.
+    batch.flush();
     
     if (document.body.classList.contains('debug') && els.debugStats) {
         els.debugStats.textContent = `Tiles: ${activeTileElements.size}`;
