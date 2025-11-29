@@ -116,15 +116,11 @@ function setActivePath(path) {
         : (path || null);
 
     state.activePath = resolved;
-    if (!resolved) {
+    if (!resolved || typeof CameraPath === 'undefined') {
         state.pathSampler = null;
         return;
     }
-    if (typeof CameraPath === 'undefined') {
-        state.pathSampler = null;
-        return;
-    }
-    state.pathSampler = CameraPath.buildSampler(resolved, { tension: 0.0, resolution: 2000 });
+    state.pathSampler = CameraPath.buildSampler(resolved);
 }
 
 function autoSelectPath() {

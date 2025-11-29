@@ -32,8 +32,7 @@ async function main() {
   }
 
   const pathObj = payload.path || { keyframes: [] };
-  const options = payload.options || {};
-  const sampler = buildSampler(pathObj, options);
+  const sampler = buildSampler(pathObj);
 
   let progresses = payload.progress;
   if (!Array.isArray(progresses) && typeof payload.samples === 'number') {
