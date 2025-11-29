@@ -100,10 +100,3 @@ def cameras_at_progresses(progresses):
     Sample a batch of progress values. Returns (cameras, tiles).
     """
     return _sample_with_node(list(progresses))
-
-# Legacy method wrapper if needed, but ideally we use the bulk return from Node
-def get_visible_tiles(camera, margin=1):
-    # DEPRECATED: Logic moved to shared/view_utils.js
-    # This function was used for per-frame calculation in Python.
-    # For path generation, use cameras_at_progresses which returns the tiles directly.
-    raise NotImplementedError("Use the batch sampling method to get tiles via Node.")
