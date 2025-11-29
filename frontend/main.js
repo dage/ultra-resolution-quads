@@ -68,7 +68,7 @@ async function init() {
     
     populateDatasetSelect();
     if (state.datasets.length > 0) {
-        loadDataset(state.datasets[0].id);
+        await loadDataset(state.datasets[0].id);
     }
     
     setupEventListeners();
