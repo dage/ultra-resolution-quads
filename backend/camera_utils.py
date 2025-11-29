@@ -39,59 +39,24 @@ def _add_globals(cam):
     return out
 
 
-def get_visible_tiles(camera, margin=1):
-    visible = set()
-    base_level = math.floor(camera['globalLevel'])
-    levels = [base_level]
-    if camera['globalLevel'] - base_level > 1e-3:
-        levels.append(base_level + 1)
-        
-    # Fixed Radius Sampling
-    # 1920x1080 view with 512px tiles requires ~2.2 radius to cover corners.
-    # We use 3.0 to be safe and include margins.
-    RADIUS = 3.0
-    
-    for lvl in levels:
-        if lvl < 0:
-            continue
-            
-        # Camera Center in Target Level Coordinates
-        limit = 2 ** lvl
-        cam_x = camera['x'] * limit
-        cam_y = camera['y'] * limit
-        
-        # Scan bounding box of radius
-        min_x = math.floor(cam_x - RADIUS)
-        max_x = math.ceil(cam_x + RADIUS)
-        min_y = math.floor(cam_y - RADIUS)
-        max_y = math.ceil(cam_y + RADIUS)
-        
-        for x in range(min_x, max_x + 1):
-            for y in range(min_y, max_y + 1):
-                if 0 <= x < limit and 0 <= y < limit:
-                    # Check distance from camera center to tile center
-                    dist = math.hypot(x + 0.5 - cam_x, y + 0.5 - cam_y)
-                    # Allow tiles where any part is within radius
-                    # Tile radius is ~0.707. So dist < RADIUS + 0.707
-                    if dist < RADIUS:
-                        visible.add((lvl, x, y))
-    return visible
-
-
 _active_path = None
 _active_options = None
+_viewport_settings = {"width": 1920, "height": 1080}
+_tile_size = 512
+
 _project_root = Path(__file__).resolve().parents[1]
 _node_cli = _project_root / "shared" / "camera_path_cli.js"
 
 
-def set_camera_path(path, internal_resolution=2000, tension=0.0):
+def set_camera_path(path, internal_resolution=2000, tension=0.0, viewport_width=1920, viewport_height=1080, tile_size=512):
     """
-    Register the active path. Sampling is delegated to the shared JS implementation
-    via `shared/camera_path_cli.js` to keep frontend and backend identical.
+    Register the active path. Sampling is delegated to the shared JS implementation.
     """
-    global _active_path, _active_options
+    global _active_path, _active_options, _viewport_settings, _tile_size
     _active_path = path
     _active_options = {"resolution": internal_resolution, "tension": tension}
+    _viewport_settings = {"width": viewport_width, "height": viewport_height}
+    _tile_size = tile_size
 
 
 def _sample_with_node(progress_list):
@@ -101,6 +66,8 @@ def _sample_with_node(progress_list):
         "path": _active_path,
         "progress": progress_list,
         "options": _active_options or {},
+        "viewport": _viewport_settings,
+        "tileSize": _tile_size
     }
     try:
         proc = subprocess.run(
@@ -113,19 +80,30 @@ def _sample_with_node(progress_list):
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"camera_path_cli failed: {exc.stderr}") from exc
     data = json.loads(proc.stdout)
-    return [_add_globals(cam) for cam in data.get("cameras", [])]
+    
+    cameras = [_add_globals(cam) for cam in data.get("cameras", [])]
+    # We might get 'tiles' back if we asked for a batch, but this function is primarily for cameras.
+    # However, we can cache the tiles if returned.
+    return cameras, data.get("tiles", [])
 
 
 def camera_at_progress(progress):
     """
     Sample a single progress value by delegating to the JS sampler.
     """
-    cams = _sample_with_node([progress])
+    cams, _ = _sample_with_node([progress])
     return cams[0] if cams else None
 
 
 def cameras_at_progresses(progresses):
     """
-    Sample a batch of progress values in a single Node invocation.
+    Sample a batch of progress values. Returns (cameras, tiles).
     """
     return _sample_with_node(list(progresses))
+
+# Legacy method wrapper if needed, but ideally we use the bulk return from Node
+def get_visible_tiles(camera, margin=1):
+    # DEPRECATED: Logic moved to shared/view_utils.js
+    # This function was used for per-frame calculation in Python.
+    # For path generation, use cameras_at_progresses which returns the tiles directly.
+    raise NotImplementedError("Use the batch sampling method to get tiles via Node.")

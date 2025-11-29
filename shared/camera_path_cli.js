@@ -5,6 +5,7 @@
 // Writes JSON: { cameras: [...] }
 
 const { buildSampler } = require('./camera_path');
+const ViewUtils = require('./view_utils');
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -47,8 +48,33 @@ async function main() {
     process.exit(1);
   }
 
-  const cameras = progresses.map((p) => sampler.cameraAtProgress(p));
-  process.stdout.write(JSON.stringify({ cameras }));
+  const viewport = payload.viewport || { width: 1920, height: 1080 };
+  const tileSize = payload.tileSize || 512;
+
+  const cameras = [];
+  const uniqueTiles = new Set();
+
+  progresses.forEach((p) => {
+    const cam = sampler.cameraAtProgress(p);
+    if (cam) {
+      cameras.push(cam);
+      
+      // Calculate tiles using the shared "Single Source of Truth" logic
+      const tiles = ViewUtils.getRequiredTiles(cam, viewport.width, viewport.height, tileSize);
+      
+      tiles.forEach(t => {
+        uniqueTiles.add(`${t.level}|${t.x}|${t.y}`);
+      });
+    }
+  });
+
+  // Convert Set back to array of objects
+  const allTiles = Array.from(uniqueTiles).map(s => {
+    const [l, x, y] = s.split('|').map(Number);
+    return { level: l, x, y };
+  });
+
+  process.stdout.write(JSON.stringify({ cameras, tiles: allTiles }));
 }
 
 main().catch((err) => {

@@ -152,12 +152,13 @@ def generate_tiles_along_path(renderer, dataset_id, paths, margin=1, steps=2000)
 
         progresses = [s / steps for s in range(steps + 1)]
         camera_utils.set_camera_path(path_obj, internal_resolution=max(steps, 2000), tension=0.0)
-        cams = camera_utils.cameras_at_progresses(progresses)
-        for cam in cams:
-            if cam is None:
-                continue
-            visible = camera_utils.get_visible_tiles(cam, margin=margin)
-            required_tiles.update(visible)
+        
+        # New API returns (cameras, tiles) directly from the shared JS logic
+        cams, tiles = camera_utils.cameras_at_progresses(progresses)
+        
+        # Add the tiles identified by the shared logic
+        for t in tiles:
+            required_tiles.add((t['level'], t['x'], t['y']))
 
     print(f"Identified {len(required_tiles)} unique tiles to generate.")
     

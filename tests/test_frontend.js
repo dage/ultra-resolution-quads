@@ -10,6 +10,7 @@ const vm = require('vm');
 // Helper to load file from project root (since we are running from tests/)
 const PROJECT_ROOT = path.join(__dirname, '..');
 const MAIN_JS_PATH = path.join(PROJECT_ROOT, 'frontend', 'main.js');
+const VIEW_UTILS_PATH = path.join(PROJECT_ROOT, 'shared', 'view_utils.js');
 
 // Mock DOM API
 const document = {
@@ -61,8 +62,13 @@ if (!fs.existsSync(MAIN_JS_PATH)) {
     console.error(`Error: Could not find ${MAIN_JS_PATH}`);
     process.exit(1);
 }
+if (!fs.existsSync(VIEW_UTILS_PATH)) {
+    console.error(`Error: Could not find ${VIEW_UTILS_PATH}`);
+    process.exit(1);
+}
 
 let mainJsContent = fs.readFileSync(MAIN_JS_PATH, 'utf8');
+let viewUtilsContent = fs.readFileSync(VIEW_UTILS_PATH, 'utf8');
 
 // Expose variables by changing const to var so they attach to the sandbox global scope.
 // This allows us to inspect internal state that is not exported.
@@ -86,8 +92,15 @@ const sandbox = {
     performance: { now: () => 0 },
     BASE_DATA_URI: '..'
 };
+sandbox.self = sandbox; // Mimic window/self so UMD attaches to sandbox
 
 vm.createContext(sandbox);
+// Run ViewUtils first to define it in global scope
+vm.runInContext(viewUtilsContent, sandbox);
+// Since ViewUtils attaches to 'this' (which is sandbox in runInContext) or 'self', 
+// we need to ensure it's available as 'ViewUtils'.
+// The UMD in view_utils.js does: root.ViewUtils = factory().
+// root is 'this' or 'self'.
 vm.runInContext(mainJsContent, sandbox);
 
 // Extract internals from sandbox

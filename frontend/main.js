@@ -195,6 +195,9 @@ function setupEventListeners() {
             // No specific action needed as currentElapsed is updated in render loop or maintained
         } else {
             // Play
+            state.debugSamples = [];
+            state.lastDebugSampleTime = 0;
+
             // If we are at the end, restart
             if (state.experience.currentElapsed >= state.experience.totalDuration) {
                 state.experience.currentElapsed = 0;
@@ -552,48 +555,58 @@ function getTileImage(datasetId, level, x, y) {
 function updateLayer(level, opacity, targetTiles) {
     if (opacity <= 0.001) return;
 
+    if (typeof ViewUtils === 'undefined') {
+        console.error("ViewUtils not loaded");
+        return;
+    }
+
+    // Use shared logic to find exactly which tiles are visible
+    const visible = ViewUtils.getVisibleTilesForLevel(
+        state.camera, 
+        level, 
+        state.viewSize.width, 
+        state.viewSize.height, 
+        LOGICAL_TILE_SIZE
+    );
+
     const tileSize = LOGICAL_TILE_SIZE;
+    const displayScale = Math.pow(2, state.camera.globalLevel - level);
+    const tileSizeOnScreen = tileSize * displayScale;
+
+    // Center of the world in global coords is state.camera.x, state.camera.y
+    // We need to compute screen position for each tile.
+    // ScreenX = ViewCenter + (TileGlobalX - CamGlobalX) * GlobalScale * TileSize? 
+    // Actually: (TileGlobalX - CamGlobalX) is distance in Global Units.
+    // WorldSize = 2^Level * TileSize
+    // But let's stick to the previous logic which worked for positioning, 
+    // just using the loop from 'visible.tiles'.
 
     const camX_T = state.camera.x * Math.pow(2, level);
     const camY_T = state.camera.y * Math.pow(2, level);
-    
-    const displayScale = Math.pow(2, state.camera.globalLevel - level);
-    const tileSizeOnScreen = tileSize * displayScale;
-    
-    const tilesInViewX = state.viewSize.width / tileSizeOnScreen;
-    const tilesInViewY = state.viewSize.height / tileSizeOnScreen;
-    
-    // Add a bit of margin to avoid popping
-    const margin = 1;
-    const minTileX = Math.floor(camX_T - tilesInViewX / 2 - margin);
-    const maxTileX = Math.floor(camX_T + tilesInViewX / 2 + margin);
-    const minTileY = Math.floor(camY_T - tilesInViewY / 2 - margin);
-    const maxTileY = Math.floor(camY_T + tilesInViewY / 2 + margin);
-    
-    const limit = Math.pow(2, level);
-    
-    for (let x = minTileX; x <= maxTileX; x++) {
-        for (let y = minTileY; y <= maxTileY; y++) {
-            if (x < 0 || y < 0 || x >= limit || y >= limit) continue;
-            
-            const key = `${state.activeDatasetId}|${level}|${x}|${y}`;
-            const distX = x - camX_T;
-            const distY = y - camY_T;
-            
-            const screenX = state.viewSize.width/2 + distX * tileSizeOnScreen;
-            const screenY = state.viewSize.height/2 + distY * tileSizeOnScreen;
-            
-            targetTiles.set(key, {
-                datasetId: state.activeDatasetId,
-                level, x, y,
-                tx: screenX,
-                ty: screenY,
-                scale: displayScale,
-                opacity: opacity,
-                zIndex: level
-            });
-        }
-    }
+
+    visible.tiles.forEach(t => {
+        const x = t.x;
+        const y = t.y;
+
+        const key = `${state.activeDatasetId}|${level}|${x}|${y}`;
+        
+        // Calculate screen position (same logic as before)
+        const distX = x - camX_T;
+        const distY = y - camY_T;
+        
+        const screenX = state.viewSize.width/2 + distX * tileSizeOnScreen;
+        const screenY = state.viewSize.height/2 + distY * tileSizeOnScreen;
+        
+        targetTiles.set(key, {
+            datasetId: state.activeDatasetId,
+            level, x, y,
+            tx: screenX,
+            ty: screenY,
+            scale: displayScale,
+            opacity: opacity,
+            zIndex: level
+        });
+    });
 }
 
 function renderLoop() {
@@ -618,11 +631,16 @@ function renderLoop() {
     const baseLevel = Math.floor(state.camera.globalLevel);
     const childOpacity = state.camera.globalLevel - baseLevel;
 
-    for (let level = 0; level <= baseLevel; level++) {
-        updateLayer(level, 1.0, targetTiles);
+    // OPTIMIZED: Only render visible stack (Parent -> Base -> Child)
+    // 1. Parent (Fallback for loading gaps)
+    if (baseLevel > 0) {
+        updateLayer(baseLevel - 1, 1.0, targetTiles);
     }
+
+    // 2. Base Level (Current primary)
+    updateLayer(baseLevel, 1.0, targetTiles);
     
-    // Child layer (fade in) above the current level.
+    // 3. Child layer (fade in) above the current level.
     updateLayer(baseLevel + 1, childOpacity, targetTiles);
     
     // Reconciliation

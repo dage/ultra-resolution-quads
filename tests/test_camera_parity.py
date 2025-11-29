@@ -26,7 +26,7 @@ class TestCameraParity(unittest.TestCase):
         }
         camera_utils.set_camera_path(path, internal_resolution=500)
 
-        c0, cmid, c1 = camera_utils.cameras_at_progresses([0.0, 0.5, 1.0])
+        (c0, cmid, c1), _ = camera_utils.cameras_at_progresses([0.0, 0.5, 1.0])
         
         self.assertIsNotNone(c0)
         self.assertIsNotNone(c1)
@@ -45,7 +45,7 @@ class TestCameraParity(unittest.TestCase):
 
         # Progress monotonicity
         sample_progresses = [p / 10.0 for p in range(11)]
-        samples = camera_utils.cameras_at_progresses(sample_progresses)
+        samples, _ = camera_utils.cameras_at_progresses(sample_progresses)
         last = -math.inf
         for s in samples:
             self.assertGreaterEqual(s['globalLevel'], last)
