@@ -519,7 +519,7 @@ function getTileImage(datasetId, level, x, y) {
     // But to avoid re-downloading if we just removed it, we can keep the src string or let browser cache handle it.
     // Browser cache is usually sufficient for 'src'.
     const img = document.createElement('img');
-    img.src = `${BASE_DATA_URI}/datasets/${datasetId}/tiles/${level}/${x}/${y}.png`;
+    img.src = `${BASE_DATA_URI}/datasets/${datasetId}/${level}/${x}/${y}.png`;
     img.className = 'tile';
     img.style.width = `${LOGICAL_TILE_SIZE}px`;
     img.style.height = `${LOGICAL_TILE_SIZE}px`;

@@ -45,7 +45,7 @@ python backend/render_tiles.py --dataset mandelbrot_deep
 python backend/render_tiles.py --dataset mandelbrot_deep --rebuild  # wipe tiles first
 ```
 
-Note: Generated tiles in `datasets/` are git-ignored to keep the repository light. The `paths.json` and `config.json` files are tracked to ensure reproducible experiences. Tiles are stored under `datasets/<id>/tiles/<tile_size>/...` so changing `tile_size` won’t collide with older renders. Use `--rebuild` to wipe existing tiles for a dataset before rendering if you want a clean slate. The old `backend/generate_dataset.py` and `setup_datasets.py` helpers are retired; use `render_tiles.py` directly.
+Note: Generated tiles in `datasets/` are git-ignored to keep the repository light. The `paths.json` and `config.json` files are tracked to ensure reproducible experiences. Tiles are stored under `datasets/<id>/<level>/<x>/<y>.png`. The renderer automatically detects existing tile sizes and triggers a clean rebuild if the requested `tile_size` differs from what is on disk. Use `--rebuild` to manually wipe existing tiles for a dataset. The old `backend/generate_dataset.py` and `setup_datasets.py` helpers are retired; use `render_tiles.py` directly.
 
 ### 3. Run the Server
 

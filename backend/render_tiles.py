@@ -9,6 +9,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Dict
 
+from PIL import Image
+
 # Add project root to path to find renderers
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -22,8 +24,65 @@ def ensure_dirs(path):
     os.makedirs(path, exist_ok=True)
 
 def tiles_base_path(dataset_id, tile_size):
-    """Version tiles by tile size to avoid mixing resolutions."""
-    return os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles', str(tile_size))
+    """
+    Return the root path for tiles. 
+    Now simply the dataset directory, as we no longer nest under 'tiles/size'.
+    """
+    return os.path.join(DATA_ROOT, 'datasets', dataset_id)
+
+def clean_existing_tiles(dataset_dir):
+    """
+    Remove only the level directories (integer names) within the dataset directory.
+    Preserves config.json, paths.json, etc.
+    """
+    if not os.path.exists(dataset_dir):
+        return
+        
+    print(f"Cleaning tiles in {dataset_dir}...")
+    for item in os.listdir(dataset_dir):
+        item_path = os.path.join(dataset_dir, item)
+        if os.path.isdir(item_path) and item.isdigit():
+            shutil.rmtree(item_path)
+
+def check_and_clean_if_needed(dataset_dir, target_tile_size):
+    """
+    Check if existing tiles match the target size. If not, clean them.
+    """
+    if not os.path.exists(dataset_dir):
+        return
+
+    # Find any existing tile to check its size
+    found_tile = None
+    for item in os.listdir(dataset_dir):
+        level_dir = os.path.join(dataset_dir, item)
+        if os.path.isdir(level_dir) and item.isdigit():
+            # Look inside a level directory
+            for x_name in os.listdir(level_dir):
+                x_dir = os.path.join(level_dir, x_name)
+                if os.path.isdir(x_dir):
+                    for f in os.listdir(x_dir):
+                        if f.endswith('.png'):
+                            found_tile = os.path.join(x_dir, f)
+                            break
+                if found_tile: break
+        if found_tile: break
+    
+    if found_tile:
+        try:
+            with Image.open(found_tile) as img:
+                w, h = img.size
+                if w != target_tile_size or h != target_tile_size:
+                    print(f"Found existing tiles with size {w}x{h}, but target is {target_tile_size}x{target_tile_size}.")
+                    print("Triggering clean rebuild...")
+                    clean_existing_tiles(dataset_dir)
+                else:
+                    # Sizes match, nothing to do
+                    pass
+        except Exception as e:
+            print(f"Warning: could not check existing tile size: {e}")
+            # If we can't read it, maybe safe to ignore or force clean? 
+            # Let's assume ignore for now unless it causes issues.
+            pass
 
 def _init_renderer_worker(renderer):
     """Initializer for ProcessPool workers; shares the renderer instance via pickling."""
@@ -243,12 +302,14 @@ def main():
             merged_renderer_kwargs.update(config_renderer_args)
         merged_renderer_kwargs.update(renderer_kwargs)
 
-        tiles_root = tiles_base_path(dataset_id, tile_size)
+        # Determine output path (now directly in dataset dir)
+        dataset_tiles_root = tiles_base_path(dataset_id, tile_size)
+        
         if args.rebuild:
-            dataset_tiles_root = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'tiles')
-            if os.path.exists(dataset_tiles_root):
-                print(f"--rebuild: deleting existing tiles at {dataset_tiles_root}")
-                shutil.rmtree(dataset_tiles_root)
+            clean_existing_tiles(dataset_tiles_root)
+        else:
+            # Auto-detect mismatch
+            check_and_clean_if_needed(dataset_tiles_root, tile_size)
 
         renderer = load_renderer(renderer_path, tile_size, merged_renderer_kwargs)
 
@@ -266,37 +327,37 @@ def main():
         if args.mode == 'full':
             print("Generating FULL pyramid (all tiles)...")
             start_time = time.time()
-            generated, total_tiles, missing = generate_full_pyramid(renderer, tiles_root, args.max_level)
+            generated, total_tiles, missing = generate_full_pyramid(renderer, dataset_tiles_root, args.max_level)
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
             # File size stats
             file_count = 0
             total_bytes = 0
-            for root, _, files in os.walk(tiles_root):
+            for root, _, files in os.walk(dataset_tiles_root):
                 for fname in files:
                     if fname.lower().endswith('.png'):
                         file_count += 1
                         total_bytes += os.path.getsize(os.path.join(root, fname))
             avg_size = total_bytes / file_count if file_count else 0.0
             avg_kb = avg_size / 1024.0
-            print(f"Stats: generated={generated}, requested_missing={missing}, total_possible={total_tiles}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={tiles_root}")
+            print(f"Stats: generated={generated}, requested_missing={missing}, total_possible={total_tiles}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={dataset_tiles_root}")
         else:
             print("Generating tiles along PATH...")
             start_time = time.time()
-            generated = generate_tiles_along_path(renderer, tiles_root, dataset_id, paths_data)
+            generated = generate_tiles_along_path(renderer, dataset_tiles_root, dataset_id, paths_data)
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
             # File size stats
             file_count = 0
             total_bytes = 0
-            for root, _, files in os.walk(tiles_root):
+            for root, _, files in os.walk(dataset_tiles_root):
                 for fname in files:
                     if fname.lower().endswith('.png'):
                         file_count += 1
                         total_bytes += os.path.getsize(os.path.join(root, fname))
             avg_size = total_bytes / file_count if file_count else 0.0
             avg_kb = avg_size / 1024.0
-            print(f"Stats: tiles_generated={generated}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={tiles_root}")
+            print(f"Stats: tiles_generated={generated}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={dataset_tiles_root}")
             
     print("Done.")
 
