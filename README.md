@@ -29,15 +29,23 @@ Install packages:
 pip install -r requirements.txt
 ```
 
-### 2. Generate Datasets
+### 2. Render Tiles
 
-The viewer relies on pre-generated tiles. You must run the setup script to generate the required datasets if you plan to use the examples. This script creates both a debug grid and a deep-zoom Mandelbrot set.
+The viewer relies on pre-generated tiles. `backend/render_tiles.py` reads `datasets/{id}/config.json` to pick the renderer and tile size; it only writes tile PNGs (no configs).
 
+Render all datasets that exist in `datasets/`:
 ```bash
-python setup_datasets.py
+python backend/render_tiles.py
 ```
 
-Note: Generated tiles in `datasets/` are git-ignored to keep the repository light. The `paths.json` and `config.json` files are tracked to ensure reproducible experiences.
+Or render a single dataset:
+```bash
+python backend/render_tiles.py --dataset debug_quadtile
+python backend/render_tiles.py --dataset mandelbrot_deep
+python backend/render_tiles.py --dataset mandelbrot_deep --rebuild  # wipe tiles first
+```
+
+Note: Generated tiles in `datasets/` are git-ignored to keep the repository light. The `paths.json` and `config.json` files are tracked to ensure reproducible experiences. Tiles are stored under `datasets/<id>/tiles/<tile_size>/...` so changing `tile_size` won’t collide with older renders. Use `--rebuild` to wipe existing tiles for a dataset before rendering if you want a clean slate. The old `backend/generate_dataset.py` and `setup_datasets.py` helpers are retired; use `render_tiles.py` directly.
 
 ### 3. Run the Server
 
@@ -104,7 +112,7 @@ Example:
 
 ## Project Structure
 
-- **`backend/`**: Contains `generate_dataset.py` and storage management logic.
+- **`backend/`**: Contains `render_tiles.py` and storage management logic.
 - **`datasets/`**: Generated tiles and config files live here.
 - **`frontend/`**: The web viewer.
   - `main.js`: Core engine logic (state, camera, rendering loop).
