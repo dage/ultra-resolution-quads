@@ -251,7 +251,7 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, paths, steps=2000
 
 def main():
     parser = argparse.ArgumentParser(description="Render tiles for Ultra-Resolution Quads datasets")
-    parser.add_argument('--dataset', required=False, help='Dataset ID (e.g. debug_quadtile, mandelbrot_deep). If not provided, all datasets will be rendered.')
+    parser.add_argument('--dataset', required=False, help='Dataset ID (e.g. debug_quadtile, mandelbrot_single_precision). If not provided, all datasets will be rendered.')
     parser.add_argument('--renderer', required=False, default=None, help='Renderer path override (e.g. renderers.mandelbrot_renderer:MandelbrotRenderer). Defaults to renderer in datasets/{id}/config.json')
     parser.add_argument('--renderer_args', default="{}", help='JSON dict of kwargs passed to the renderer constructor')
     parser.add_argument('--max_level', type=int, default=4, help='Max level to generate for "full" mode')

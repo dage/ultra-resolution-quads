@@ -90,8 +90,8 @@ Top-level list of datasets:
 {
   "datasets": [
     {
-      "id": "mandelbrot_deep",
-      "name": "Mandelbrot Deep Zoom",
+      "id": "mandelbrot_single_precision",
+      "name": "Mandelbrot Single Precision",
       "description": "Deep zoom into the Mandelbrot set"
     },
     {
@@ -107,8 +107,8 @@ Top-level list of datasets:
 Dataset configuration:
 ```json
 {
-  "id": "mandelbrot_deep",
-  "name": "Mandelbrot Deep Zoom",
+  "id": "mandelbrot_single_precision",
+  "name": "Mandelbrot Single Precision",
   "min_level": 0,
   "max_level": 20
 }

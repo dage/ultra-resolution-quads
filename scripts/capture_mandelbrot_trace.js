@@ -28,7 +28,7 @@ const fs = require('fs');
 
   await page.goto('http://localhost:8000/frontend/index.html', { waitUntil: 'networkidle' });
   await page.waitForSelector('#dataset-select');
-  await page.selectOption('#dataset-select', 'mandelbrot_deep');
+  await page.selectOption('#dataset-select', 'mandelbrot_single_precision');
   await page.waitForTimeout(500);
 
   // Play the camera path.

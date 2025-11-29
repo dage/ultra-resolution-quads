@@ -6,8 +6,8 @@
       "description": "Debug tiles to verify coordinate system"
     },
     {
-      "id": "mandelbrot_deep",
-      "name": "Mandelbrot Deep Zoom",
+      "id": "mandelbrot_single_precision",
+      "name": "Mandelbrot Single Precision",
       "description": ""
     }
   ]

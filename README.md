@@ -41,8 +41,7 @@ python backend/render_tiles.py
 Or render a single dataset:
 ```bash
 python backend/render_tiles.py --dataset debug_quadtile
-python backend/render_tiles.py --dataset mandelbrot_deep
-python backend/render_tiles.py --dataset mandelbrot_deep --rebuild  # wipe tiles first
+python backend/render_tiles.py --dataset mandelbrot_single_precisionpython backend/render_tiles.py --dataset mandelbrot_single_precision --rebuild  # wipe tiles first
 ```
 
 Note: Generated tiles in `datasets/` are git-ignored to keep the repository light. The `paths.json` and `config.json` files are tracked to ensure reproducible experiences. Tiles are stored under `datasets/<id>/<level>/<x>/<y>.png`. The renderer automatically detects existing tile sizes and triggers a clean rebuild if the requested `tile_size` differs from what is on disk. Use `--rebuild` to manually wipe existing tiles for a dataset. The old `backend/generate_dataset.py` and `setup_datasets.py` helpers are retired; use `render_tiles.py` directly.
@@ -84,7 +83,7 @@ node tests/test_frontend.js
 You can analyze the continuity and speed of a camera path using the plotting script. This generates a 9-panel chart showing position, velocity, and acceleration.
 
 ```bash
-python scripts/plot_camera_path.py datasets/mandelbrot_deep/paths.json --output artifacts/analysis.png
+python scripts/plot_camera_path.py datasets/mandelbrot_single_precision/paths.json --output artifacts/analysis.png
 ```
 
 ## Path Macros
