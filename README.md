@@ -21,6 +21,14 @@ You will need Python 3 and the Pillow library for image generation.
 pip install Pillow
 ```
 
+For rendering deep fractal zooms, install fractalshades.
+
+**macOS example:**
+```bash
+brew install gmp mpfr libmpc
+CFLAGS="-I/opt/homebrew/include" LDFLAGS="-L/opt/homebrew/lib" pip install gmpy2 fractalshades
+```
+
 ### Backend Dependencies
 
 Install packages:
