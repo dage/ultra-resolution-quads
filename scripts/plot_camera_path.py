@@ -21,12 +21,14 @@ def plot_dataset_path(path_file, dataset_id):
         print(f"Error reading {path_file}: {e}")
         return
 
-    if 'paths' not in data or not data['paths']:
-        print(f"No paths found in {dataset_id}")
+    path_obj = data.get('path')
+    if path_obj is None:
+        print(f"No path found in {dataset_id}")
         return
-    
-    # Use the first path found
-    path_obj = data['paths'][0]
+    if not isinstance(path_obj, dict):
+        print(f"Invalid path payload in {path_file}; expected object under 'path'.")
+        return
+
     path_name = path_obj.get('name', 'Unnamed')
     print(f"Analyzing path: {path_name} ({dataset_id})")
     

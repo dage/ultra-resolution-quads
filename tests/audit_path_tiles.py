@@ -26,9 +26,14 @@ def load_path(dataset_path, path_id):
         return None
     with open(path_file, 'r') as f:
         data = json.load(f)
-        for p in data.get('paths', []):
-            if path_id is None or p.get('id') == path_id:
-                return p
+        if 'paths' in data:
+            return None
+
+        path_obj = data.get('path')
+        if not path_obj or not isinstance(path_obj, dict):
+            return None
+        if path_id is None or path_obj.get('id') == path_id:
+            return path_obj
     return None
 
 def main():

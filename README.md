@@ -41,10 +41,12 @@ python backend/render_tiles.py
 Or render a single dataset:
 ```bash
 python backend/render_tiles.py --dataset debug_quadtile
-python backend/render_tiles.py --dataset mandelbrot_single_precisionpython backend/render_tiles.py --dataset mandelbrot_single_precision --rebuild  # wipe tiles first
+python backend/render_tiles.py --dataset mandelbrot_single_precision
+python backend/render_tiles.py --dataset mandelbrot_single_precision --rebuild  # wipe tiles first
 ```
 
 Note: Generated tiles in `datasets/` are git-ignored to keep the repository light. The `paths.json` and `config.json` files are tracked to ensure reproducible experiences. Tiles are stored under `datasets/<id>/<level>/<x>/<y>.png`. The renderer automatically detects existing tile sizes and triggers a clean rebuild if the requested `tile_size` differs from what is on disk. Use `--rebuild` to manually wipe existing tiles for a dataset. The old `backend/generate_dataset.py` and `setup_datasets.py` helpers are retired; use `render_tiles.py` directly.
+Each dataset can optionally provide a single camera path in `paths.json` under the `path` key.
 
 ### 3. Run the Server
 
@@ -88,7 +90,7 @@ python scripts/plot_camera_path.py datasets/mandelbrot_single_precision/paths.js
 
 ## Path Macros
 
-Camera keyframes in `datasets/*/paths.json` can use small macros that are expanded by `shared/camera_path.js` (shared by frontend and backend). The canonical camera shape is `{ globalLevel, x, y }` where `x/y` are normalized doubles in `[0,1)` and `globalLevel` is a single double (integer + fractional crossfade).
+Camera keyframes in the single `path` inside `datasets/*/paths.json` can use small macros that are expanded by `shared/camera_path.js` (shared by frontend and backend). The canonical camera shape is `{ globalLevel, x, y }` where `x/y` are normalized doubles in `[0,1)` and `globalLevel` is a single double (integer + fractional crossfade).
 
 - `macro: "global"` (or just provide `x/y` directly): supply `level`, `globalX`, and `globalY` (normalized doubles) to set camera position.
 - `macro: "mandelbrot"` (aliases: `mandelbrot_point`, `mb`): supply `level`, `re`, and `im` for a point in the Mandelbrot set. Uses the renderer bounds centered at `-0.75 + 0i` with a width/height of `3.0`.
@@ -97,15 +99,13 @@ Example:
 
 ```json
 {
-  "paths": [
-    {
-      "id": "macro_demo",
-      "keyframes": [
-        { "camera": { "macro": "global", "level": 10, "globalX": 0.375, "globalY": 0.52 } },
-        { "camera": { "macro": "mandelbrot", "level": 14, "re": -0.743643887, "im": 0.131825904 } }
-      ]
-    }
-  ]
+  "path": {
+    "id": "macro_demo",
+    "keyframes": [
+      { "camera": { "macro": "global", "level": 10, "globalX": 0.375, "globalY": 0.52 } },
+      { "camera": { "macro": "mandelbrot", "level": 14, "re": -0.743643887, "im": 0.131825904 } }
+    ]
+  }
 }
 ```
 

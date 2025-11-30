@@ -18,7 +18,7 @@ const state = {
     viewSize: { width: 0, height: 0 },
     
     // Experience (Path Playback) State
-    paths: [],
+    path: null,
     activePath: null,
     pathSampler: null,
     experience: {
@@ -100,10 +100,10 @@ async function loadDataset(id) {
     try {
         const respPaths = await fetch(`${BASE_DATA_URI}/datasets/${id}/paths.json`);
         const pathsData = await respPaths.json();
-        state.paths = pathsData.paths || [];
+        state.path = pathsData.path || null;
         autoSelectPath();
     } catch {
-        state.paths = [];
+        state.path = null;
         autoSelectPath();
     }
 
@@ -124,9 +124,9 @@ function setActivePath(path) {
 }
 
 function autoSelectPath() {
-    // Automatically select the first path if available
-    if (state.paths.length > 0) {
-        setActivePath(state.paths[0]);
+    // Automatically select the path if available
+    if (state.path) {
+        setActivePath(state.path);
         setExperienceControlsEnabled(true);
     } else {
         setActivePath(null);

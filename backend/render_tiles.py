@@ -176,19 +176,31 @@ def load_renderer(renderer_path: str, tile_size: int, renderer_kwargs: Dict[str,
         raise TypeError(f"Failed to instantiate renderer '{renderer_path}' with args {kwargs}: {exc}") from exc
 
 
-def load_paths(dataset_id: str):
-    """Load camera paths for a dataset; assumes the JSON file already exists."""
+def load_path(dataset_id: str):
+    """
+    Load the single camera path for a dataset.
+    The schema uses a lone object under the 'path' key. The file itself is optional;
+    if missing, no path is returned. Legacy 'paths' arrays are not supported.
+    """
     path_file = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'paths.json')
     if not os.path.exists(path_file):
-        raise FileNotFoundError(f"paths.json not found for dataset '{dataset_id}' at {path_file}")
+        return None
 
     with open(path_file, 'r') as f:
         data = json.load(f)
 
-    paths = data.get('paths', [])
-    if not isinstance(paths, list):
-        raise ValueError(f"paths.json for dataset '{dataset_id}' must contain a list under the 'paths' key.")
-    return paths
+    if 'paths' in data:
+        raise ValueError(f"paths.json for dataset '{dataset_id}' must use a single 'path' object (legacy 'paths' arrays are not supported).")
+
+    if 'path' not in data:
+        raise ValueError(f"paths.json for dataset '{dataset_id}' must include a 'path' object.")
+
+    path_obj = data['path']
+    if path_obj is None:
+        return None
+    if not isinstance(path_obj, dict):
+        raise ValueError(f"paths.json for dataset '{dataset_id}' must contain an object under the 'path' key.")
+    return path_obj
 
 def generate_full_pyramid(renderer, base_path, max_level):
     tasks = []
@@ -213,24 +225,28 @@ def generate_full_pyramid(renderer, base_path, max_level):
     generated = render_tasks(renderer, tasks)
     return generated, total_tiles, len(tasks)
 
-def generate_tiles_along_path(renderer, base_path, dataset_id, paths, steps=2000):
-    print(f"Generating tiles along paths for {dataset_id}...")
-    required_tiles = set()  # (level, x, y)
-    
-    for path_obj in paths:
-        keyframes = path_obj.get('keyframes', [])
-        if len(keyframes) < 2:
-            continue
+def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000):
+    if not path:
+        print(f"No path defined for {dataset_id}; skipping path-based generation.")
+        return 0
 
-        progresses = [s / steps for s in range(steps + 1)]
-        camera_utils.set_camera_path(path_obj, internal_resolution=max(steps, 2000), tension=0.0)
-        
-        # New API returns (cameras, tiles) directly from the shared JS logic
-        cams, tiles = camera_utils.cameras_at_progresses(progresses)
-        
-        # Add the tiles identified by the shared logic
-        for t in tiles:
-            required_tiles.add((t['level'], t['x'], t['y']))
+    keyframes = path.get('keyframes', [])
+    if len(keyframes) < 2:
+        print(f"Path for {dataset_id} has fewer than 2 keyframes; skipping.")
+        return 0
+
+    print(f"Generating tiles along path for {dataset_id}...")
+    required_tiles = set()  # (level, x, y)
+
+    progresses = [s / steps for s in range(steps + 1)]
+    camera_utils.set_camera_path(path, internal_resolution=max(steps, 2000), tension=0.0)
+    
+    # New API returns (cameras, tiles) directly from the shared JS logic
+    cams, tiles = camera_utils.cameras_at_progresses(progresses)
+    
+    # Add the tiles identified by the shared logic
+    for t in tiles:
+        required_tiles.add((t['level'], t['x'], t['y']))
 
     print(f"Identified {len(required_tiles)} unique tiles to generate.")
     
@@ -314,11 +330,11 @@ def main():
 
         print(f"Initializing dataset: {dataset_id}")
         
-        paths_data = None
+        path_data = None
         if args.mode == 'path':
             try:
-                paths_data = load_paths(dataset_id)
-            except (FileNotFoundError, ValueError) as exc:
+                path_data = load_path(dataset_id)
+            except ValueError as exc:
                 print(f"Skipping dataset '{dataset_id}' in path mode: {exc}")
                 continue
 
@@ -343,7 +359,7 @@ def main():
         else:
             print("Generating tiles along PATH...")
             start_time = time.time()
-            generated = generate_tiles_along_path(renderer, dataset_tiles_root, dataset_id, paths_data)
+            generated = generate_tiles_along_path(renderer, dataset_tiles_root, dataset_id, path_data)
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
             # File size stats
