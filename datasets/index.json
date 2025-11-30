@@ -7,7 +7,7 @@
     },
     {
       "id": "mandelbrot_single_precision",
-      "name": "Mandelbrot Single Precision",
+      "name": "Mandelbrot GPU Single Precision",
       "description": ""
     }
   ]
