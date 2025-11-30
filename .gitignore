@@ -1,6 +1,7 @@
-# Ignore everything under datasets/*/ except .json files
-datasets/*/
+# Ignore everything under datasets/*/ except configs and per-dataset renderers
+datasets/*/*/
 !datasets/*/*.json
+!datasets/*/render.py
 
 # General ignores
 **/__pycache__/

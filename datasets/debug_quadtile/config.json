@@ -2,5 +2,5 @@
   "id": "debug_quadtile",
   "name": "Debug Quadtile",
   "tile_size": 512,
-  "renderer": "renderers.debug_renderer:DebugQuadtileRenderer"
+  "renderer": "datasets.debug_quadtile.render:DebugQuadtileRenderer"
 }

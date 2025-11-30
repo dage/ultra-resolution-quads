@@ -42,7 +42,16 @@ const document = {
         src: '',
         remove: function() { this._removed = true; },
         _removed: false
-    })
+    }),
+    createDocumentFragment: () => {
+        const fragment = {
+            childNodes: [],
+            appendChild(node) {
+                this.childNodes.push(node);
+            }
+        };
+        return fragment;
+    }
 };
 
 const window = {

@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from renderers.mandelbrot_renderer import MandelbrotDeepZoomRenderer
+from datasets.mandelbrot_single_precision.render import MandelbrotDeepZoomRenderer
 
 
 class MandelbrotGPU:
