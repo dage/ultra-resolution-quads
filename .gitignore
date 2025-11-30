@@ -9,3 +9,4 @@ artifacts/
 GEMINI.md
 datasets/.DS_Store
 .DS_Store
+.env

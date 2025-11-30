@@ -87,6 +87,34 @@ tests/run_all_tests.sh
 node tests/test_frontend.js
 ```
 
+### Image Analysis Tool
+
+A command-line utility for analyzing images using OpenRouter.ai's image-to-text models. This tool allows you to pass one or more image paths and a text prompt to an AI model, receiving a textual analysis in return.
+
+**Location:** `backend/tools/analyze_image.py`
+
+**Prerequisites:**
+- An `OPENROUTER_API_KEY` set in your environment or a `.env` file in the project root.
+- (Optional) `OPENROUTER_BASE_URL` if you're not using the default OpenRouter endpoint.
+
+**Usage:**
+
+```bash
+python backend/tools/analyze_image.py <image_path_1> [<image_path_2> ...] --prompt "<YOUR_PROMPT>" [--model <model_slug>]
+```
+
+- `<image_path_n>`: Path(s) to the image files you want to analyze.
+- `--prompt`: The text prompt to guide the AI's analysis.
+- `--model`: (Optional) The OpenRouter model slug to use. Defaults to `qwen/qwen3-vl-8b-instruct`.
+
+**Example:**
+
+To analyze `artifacts/gallery_experiment/gallery_full.png` with a specific critique:
+
+```bash
+python backend/tools/analyze_image.py artifacts/gallery_experiment/gallery_full.png --prompt "Analyze these 4 fractals. Be extremely critical. Penalize heavily for monochrome or uniform color palettes. Reward high contrast, multi-color variety and complex gradients. Rate each from 0 to 100. I consider 1, 2, and 3 to be boring due to lack of color variation, while 4 is exciting. Please align your scoring with this critique."
+```
+
 ## Analysis Tools
 
 ### Camera Path Analysis
