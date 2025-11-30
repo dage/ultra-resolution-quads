@@ -126,7 +126,13 @@ python scripts/plot_camera_path.py datasets/mandelbrot_single_precision/paths.js
 
 ### Fractal Rendering Helper
 
-A generic wrapper class, `FractalShadesRenderer`, is available in `backend/fractal_renderer.py` to simplify rendering high-resolution Mandelbrot images using `fractalshades`. It supports high-precision coordinates (via strings), custom colormaps, and optional 3D lighting.
+A generic wrapper class, `FractalShadesRenderer`, is available in `backend/fractal_renderer.py` to simplify rendering high-resolution images using `fractalshades`. It supports:
+
+- **Multiple Models**: Mandelbrot, Burning Ship, Power Tower, and Mandelbrot^N.
+- **Deep Zoom**: Support for perturbation theory for ultra-deep zooms beyond standard floating point precision.
+- **Visualization Options**: Continuous iteration, Fieldlines, DEM (Distance Estimation Method).
+- **High Precision**: Handles string inputs for coordinates.
+- **Advanced Features**: Skew correction for Burning Ship, 3D lighting, custom colormaps, and projection support (Expmap, Moebius).
 
 Usage example:
 ```python
@@ -134,14 +140,16 @@ from backend.fractal_renderer import FractalShadesRenderer
 
 renderer = FractalShadesRenderer("output_folder")
 path = renderer.render(
-    center_x="-0.743643887037151", # Strings recommended for high precision
-    center_y="0.13182590420533",
-    width=0.002,
-    img_size=512,
-    max_iter=2000,
-    filename="fractal.png",
-    colormap="citrus",
-    add_lighting=True
+    center_x="-1.749", 
+    center_y="0.0",
+    width=1.0e-50, # Very deep zoom
+    img_size=800,
+    max_iter=10000,
+    filename="deep_zoom.png",
+    model="burning_ship",
+    use_perturbation=True, # Enable deep zoom engine
+    visualization="fieldlines", # or "dem", "continuous_iter"
+    colormap="ocean"
 )
 ```
 
