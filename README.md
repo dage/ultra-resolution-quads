@@ -96,6 +96,27 @@ You can analyze the continuity and speed of a camera path using the plotting scr
 python scripts/plot_camera_path.py datasets/mandelbrot_single_precision/paths.json --output artifacts/analysis.png
 ```
 
+### Fractal Rendering Helper
+
+A generic wrapper class, `FractalShadesRenderer`, is available in `backend/fractal_renderer.py` to simplify rendering high-resolution Mandelbrot images using `fractalshades`. It supports high-precision coordinates (via strings), custom colormaps, and optional 3D lighting.
+
+Usage example:
+```python
+from backend.fractal_renderer import FractalShadesRenderer
+
+renderer = FractalShadesRenderer("output_folder")
+path = renderer.render(
+    center_x="-0.743643887037151", # Strings recommended for high precision
+    center_y="0.13182590420533",
+    width=0.002,
+    img_size=512,
+    max_iter=2000,
+    filename="fractal.png",
+    colormap="citrus",
+    add_lighting=True
+)
+```
+
 ## Path Macros
 
 Camera keyframes in the single `path` inside `datasets/*/paths.json` can use small macros that are expanded by `shared/camera_path.js` (shared by frontend and backend). The canonical camera shape is `{ globalLevel, x, y }` where `x/y` are normalized doubles in `[0,1)` and `globalLevel` is a single double (integer + fractional crossfade).
