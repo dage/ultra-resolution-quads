@@ -1,10 +1,9 @@
 import os
 import shutil
 import numpy as np
-from typing import Union, Optional, List
-from PIL import Image
+from typing import Union, Optional, List, Dict, Any, Literal
 
-# Work around numba caching issues on some platforms (e.g., Python 3.12 / M-series Macs)
+# Work around numba caching issues on some platforms
 os.environ.setdefault("NUMBA_DISABLE_CACHING", "1")
 
 import fractalshades as fs
@@ -15,17 +14,30 @@ from fractalshades.postproc import (
     Postproc_batch,
     Continuous_iter_pp,
     DEM_normal_pp,
-    Fieldlines_pp
+    Fieldlines_pp,
+    DEM_pp,
+    Raw_pp,
 )
 from fractalshades.colors.layers import (
     Color_layer,
     Normal_map_layer,
-    Blinn_lighting
+    Blinn_lighting,
+    Grey_layer,
+    Bool_layer,
+    Virtual_layer,
+    Overlay_mode
 )
+
+# Import custom models
+try:
+    from . import fractal_renderer_models as cm
+except ImportError:
+    import fractal_renderer_models as cm
 
 class FractalShadesRenderer:
     """
-    A generic wrapper for fractalshades to easily render Mandelbrot tiles/images.
+    A versatile renderer for fractalshades models, designed to support
+    diverse gallery examples including deep zooms, custom flavors, and advanced coloring.
     """
     def __init__(self, output_dir, verbosity=0):
         self.output_dir = output_dir
@@ -33,258 +45,387 @@ class FractalShadesRenderer:
         fs.settings.enable_multithreading = True
         fs.settings.verbosity = verbosity
 
-    def _create_model(self, model_name: str, directory: str, mandelbrot_n_exponent: int, use_perturbation: bool = False):
+    def _create_model(self, 
+                      model_name: str, 
+                      directory: str, 
+                      use_perturbation: bool = False, 
+                      **kwargs):
         """
-        Factory for different fractal models to allow more diverse galleries.
+        Factory for fractal models.
         """
         name = (model_name or "mandelbrot").lower()
+        
+        # 1. Handle Burning Ship and its flavors (Shark Fin, Perpendicular)
+        if name in ["burning_ship", "shark_fin", "perpendicular_burning_ship"]:
+            flavor = kwargs.get("flavor", "Burning ship")
+            
+            # Map semantic names to flavors if not explicitly provided
+            if name == "shark_fin":
+                flavor = "Shark fin"
+            elif name == "perpendicular_burning_ship":
+                flavor = "Perpendicular burning ship"
+            
+            if use_perturbation:
+                return fsm.Perturbation_burning_ship(directory, flavor=flavor)
+            else:
+                return fsm.Burning_ship(directory, flavor=flavor)
 
-        if use_perturbation:
-            # Deep zoom models
-            if name == "mandelbrot":
-                return fsm.Perturbation_mandelbrot(directory)
-            elif name == "burning_ship":
-                return fsm.Perturbation_burning_ship(directory)
-            # Fallback to standard if perturbation version not handled explicitly or available
-            # For now, we only support perturbation for these two common types.
-
+        # 2. Handle Mandelbrot and its variants
         if name == "mandelbrot":
+            if use_perturbation:
+                return fsm.Perturbation_mandelbrot(directory)
             return fsm.Mandelbrot(directory)
-        if name == "burning_ship":
-            return fsm.Burning_ship(directory)
+        
         if name == "mandelbrot_n":
-            return fsm.Mandelbrot_N(directory, exponent=mandelbrot_n_exponent)
+            exponent = kwargs.get("exponent", 3)
+            if use_perturbation:
+                 return fsm.Perturbation_mandelbrot_N(directory, exponent=exponent)
+            return fsm.Mandelbrot_N(directory, exponent=exponent)
+
+        # 3. Handle Power Tower (Tetration)
         if name == "power_tower":
             return fsm.Power_tower(directory)
+
+        # 4. Custom Models (from fractal_renderer_models)
+        # Note: these generally don't support perturbation in the standard FS way 
+        # unless implemented there.
+        if use_perturbation:
+             print(f"Warning: Perturbation likely not supported for custom model '{name}'.")
+
+        if name in ["mandelbar", "tricorn"]:
+            return cm.Mandelbar(directory)
+        if name == "phoenix":
+            return cm.Phoenix(directory, **kwargs)
+        if name == "celtic":
+            return cm.Celtic(directory)
+        if name == "nova":
+            return cm.Nova(directory, **kwargs)
+        if name == "julia":
+             if 'c_val' not in kwargs:
+                 raise ValueError("Julia model requires 'c_val' parameter.")
+             return cm.Julia(directory, c_val=kwargs['c_val'])
             
         # Fallback
+        print(f"Warning: Model '{name}' not found. Defaulting to Mandelbrot.")
         return fsm.Mandelbrot(directory)
 
     def render(self, 
-               center_x: Union[float, str], 
-               center_y: Union[float, str], 
-               width: float, 
-               img_size: int = 512, 
+               # --- Core Model Config ---
+               fractal_type: str = "mandelbrot", 
+               flavor: Optional[str] = None,
+               exponent: int = 3,
+               fractal_params: Optional[Dict[str, Any]] = None,
+               
+               # --- Zoom & Projection ---
+               x: Union[str, float] = "-0.5", 
+               y: Union[str, float] = "0.0", 
+               dx: Union[str, float] = "3.0", 
+               nx: int = 800, 
+               xy_ratio: float = 1.0, 
+               theta_deg: float = 0.0, 
+               projection: str = "cartesian", # "cartesian", "expmap"
+               skew_params: Optional[Dict[str, float]] = None, # {skew_00, skew_01...}
+               precision: Optional[int] = None, # dps
+               
+               # --- Calculation ---
                max_iter: int = 2000, 
-               filename: Optional[str] = "fractal.png",
+               m_divergence: float = 1000.0,
+               interior_detect: bool = False,
+               epsilon_stationnary: float = 0.001,
+               calc_args: Optional[Dict[str, Any]] = None,
+               
+               # --- Coloring / Plotting ---
+               base_layer: Literal["continuous_iter", "distance_estimation"] = "continuous_iter",
+               colormap: Union[str, fscolors.Fractal_colormap] = "classic",
+               invert_colormap: bool = False,
+               zmin: Optional[float] = None,
+               zmax: Optional[float] = None,
+               interior_color: Optional[Any] = (0.0, 0.0, 0.0),
+               interior_mask: str = "all", # "all", "not_diverging"
+               
+               # --- Lighting ---
+               shade_kind: Literal["None", "standard", "glossy"] = "None",
+               lighting_config: Optional[Dict[str, Any]] = None,
+               
+               # --- Fieldlines ---
+               fieldlines_kind: Literal["None", "overlay", "twin"] = "None",
+               fieldlines_func: Optional[Dict[str, Any]] = None,
+               
+               # --- Output ---
+               filename: str = "fractal.png",
                output_path: Optional[str] = None,
-               colormap: Union[str, fscolors.Fractal_colormap] = "citrus",
-               layer_func: str = None,
-               supersampling: str = "3x3",
+               supersampling: str = "2x2",
                batch_prefix: str = "fs_render",
-               return_pillow_image: bool = False,
-               
-               # Visualization & Features
-               visualization: str = "continuous_iter", # "continuous_iter", "dem", "fieldlines"
-               add_lighting: bool = False, 
-               interior_color: Optional[str] = None,
-               
-               # Model Configuration
-               model: str = "mandelbrot", # treated as 'fractal_type'
-               mandelbrot_n_exponent: int = 3,
-               
-               # Deep Zoom / Perturbation
-               use_perturbation: bool = False,
-               dps: Optional[int] = None,
-               
-               # Burning Ship Specific
-               skew_matrix: Optional[tuple] = None, # (00, 01, 10, 11)
-               
-               # Projection
-               projection_type: str = "cartesian", # "cartesian", "expmap", "moebius"
-               projection_params: Optional[dict] = None
+               return_pillow_image: bool = False
                ):
         """
-        Render a single fractal image.
-        
-        Args:
-            center_x, center_y: Coordinates (float or string for high precision).
-            width: View width.
-            img_size: Output resolution.
-            max_iter: Max iterations.
-            filename, output_path: Output destination.
-            colormap: Colormap name or object.
-            layer_func: Custom color mapping function string.
-            supersampling: Antialiasing mode ("2x2", "3x3", "None").
-            batch_prefix: Temp file prefix.
-            return_pillow_image: Return PIL object.
-            visualization: "continuous_iter" (default), "dem", "fieldlines".
-            add_lighting: Enable 3D lighting (requires DEM or compatible visualization).
-            interior_color: Color for points inside the set (e.g., "black", "white").
-            model: Fractal type ("mandelbrot", "burning_ship", "mandelbrot_n", "power_tower").
-            mandelbrot_n_exponent: Exponent for Mandelbrot_N.
-            use_perturbation: Enable perturbation theory for deep zooms.
-            dps: Decimal precision for perturbation (optional).
-            skew_matrix: (skew_00, skew_01, skew_10, skew_11) for Burning Ship un-skewing.
-            projection_type: "cartesian", "expmap", or "moebius".
-            projection_params: Dict of params for the chosen projection.
+        Render a fractal image with high configurability matching fractalshades gallery capabilities.
         """
         
-        # Determine final output path
+        # 1. Resolve Paths
         if output_path:
             final_path = output_path
-            os.makedirs(os.path.dirname(final_path), exist_ok=True)
         else:
             final_path = os.path.join(self.output_dir, filename)
-            os.makedirs(os.path.dirname(final_path), exist_ok=True)
-
-        # 1. Setup Model
+        
+        os.makedirs(os.path.dirname(final_path), exist_ok=True)
+        
         model_dir = os.path.join(self.output_dir, f"_{batch_prefix}_tmp")
         if os.path.exists(model_dir):
             shutil.rmtree(model_dir)
         os.makedirs(model_dir, exist_ok=True)
+
+        # 2. Create Model
+        f_params = fractal_params or {}
+        if flavor: f_params['flavor'] = flavor
+        if exponent: f_params['exponent'] = exponent
         
-        fractal_model = self._create_model(model, model_dir, mandelbrot_n_exponent, use_perturbation)
-
-        # 2. Zoom / Projection
-        zoom_kwargs = {
-            "x": center_x,
-            "y": center_y,
-            "dx": width,
-            "nx": img_size,
-            "xy_ratio": 1.0,
-            "theta_deg": 0,
-        }
-
-        # Handle Skew (only for Burning Ship / relevant models if they support it)
-        if skew_matrix:
-            zoom_kwargs.update({
-                "has_skew": True,
-                "skew_00": skew_matrix[0],
-                "skew_01": skew_matrix[1],
-                "skew_10": skew_matrix[2],
-                "skew_11": skew_matrix[3]
-            })
-
-        # Handle Projection
-        if projection_type == "expmap":
-            zoom_kwargs["projection"] = fs.projection.Expmap(**(projection_params or {}))
-        elif projection_type == "moebius":
-            zoom_kwargs["projection"] = fs.projection.Moebius(**(projection_params or {}))
-        else:
-            zoom_kwargs["projection"] = fs.projection.Cartesian()
+        # Heuristic for perturbation: use if dx is very small or precision is set
+        use_perturbation = False
+        if precision is not None:
+            use_perturbation = True
+        elif isinstance(dx, str) and "e-" in dx and float(dx) < 1e-13:
+            use_perturbation = True
             
-        # Handle DPS for perturbation
-        if use_perturbation and dps is not None:
-            zoom_kwargs["dps"] = dps
+        fractal = self._create_model(fractal_type, model_dir, use_perturbation, **f_params)
 
-        fractal_model.zoom(**zoom_kwargs)
+        # 3. Zoom setup
+        # If not using perturbation, ensure coordinates are floats
+        if not use_perturbation:
+            try:
+                x = float(x)
+                y = float(y)
+                dx = float(dx)
+            except (ValueError, TypeError):
+                # If conversion fails, leave as is (might be intended for some custom models, though unlikely for standard)
+                pass
 
-        # 3. Calculate
-        # Define calculations based on visualization type
-        calc_name = "div_layer"
+        zoom_kwargs = {
+            "x": x, "y": y, "dx": dx, "nx": nx, 
+            "xy_ratio": xy_ratio, "theta_deg": theta_deg,
+            "projection": fs.projection.Cartesian() # Default for now, extend if needed
+        }
+        if precision is not None:
+            zoom_kwargs["precision"] = precision
+            
+        if skew_params:
+            zoom_kwargs["has_skew"] = True
+            zoom_kwargs.update(skew_params)
+            
+        fractal.zoom(**zoom_kwargs)
+
+        # 4. Calculation
+        c_args = calc_args or {}
+        calc_name = "std_calc"
+        
+        # Merge explicit args with calc_args
         calc_kwargs = {
             "calc_name": calc_name,
             "subset": None,
             "max_iter": max_iter,
-            "M_divergence": 1000.0,
+            "M_divergence": m_divergence,
+            "epsilon_stationnary": epsilon_stationnary,
         }
-
-        # Perturbation models typically have a slightly different calc interface or just work.
-        try:
-            fractal_model.calc_std_div(
-                epsilon_stationnary=1.0e-3,
-                **calc_kwargs,
-            )
-        except TypeError:
-            # Some models might not take epsilon_stationnary
-            fractal_model.calc_std_div(**calc_kwargs)
-
-        # 4. Post-processing
-        pp = Postproc_batch(fractal_model, calc_name)
-        
-        # Setup layers
-        if visualization == "fieldlines":
-            # Removed damping_ratio as it's not supported in this version of fractalshades
-            pp.add_postproc("field", Fieldlines_pp(n_iter=4, swirl=0.0))
-            layer_name = "field"
-        elif visualization == "dem":
-            # For DEM, we use continuous iter but will likely rely on lighting for the effect
-            # or we could use a different postproc if available, but keeping it simple.
-            pp.add_postproc("dem", Continuous_iter_pp())
-            layer_name = "dem"
-        else: # continuous_iter
-            pp.add_postproc("cont_iter", Continuous_iter_pp())
-            layer_name = "cont_iter"
+        # Add optional ones if supported/provided
+        if interior_detect:
+            calc_kwargs["interior_detect"] = True
             
-        if add_lighting:
-            pp.add_postproc("normals", DEM_normal_pp(kind="potential"))
+        # If fieldlines/twinfield are active, we usually need orbit calc
+        # But Fieldlines_pp usually runs *after* standard calc using saved data?
+        # Actually fs requires calc_orbit=True for fieldlines to work if they depend on orbit
+        # But standard Fieldlines_pp in postproc often re-calculates or uses stored. 
+        # Checking gallery: ex 2 uses calc_orbit=True, backshift=3.
+        if fieldlines_kind != "None":
+            calc_kwargs["calc_orbit"] = True
+            calc_kwargs["backshift"] = 3
+            
+        calc_kwargs.update(c_args)
+        
+        # Run Calc
+        if hasattr(fractal, "calc_std_div"):
+            try:
+                fractal.calc_std_div(**calc_kwargs)
+            except TypeError:
+                # Retry without unsupported args if necessary (simple fallback)
+                if "interior_detect" in calc_kwargs:
+                    del calc_kwargs["interior_detect"]
+                if "epsilon_stationnary" in calc_kwargs:
+                    del calc_kwargs["epsilon_stationnary"]
+                fractal.calc_std_div(**calc_kwargs)
+        elif hasattr(fractal, "newton_calc"):
+            # Special case for Power Tower / Newton
+            newton_kwargs = {
+                "calc_name": calc_name,
+                "subset": None,
+                "max_newton": 20,
+                "eps_newton_cv": 1e-12,
+                "max_order": 2000, # Default required param
+            }
+            # Merge c_args for things like max_order, compute_order
+            newton_kwargs.update(c_args)
+            fractal.newton_calc(**newton_kwargs)
+        else:
+            raise RuntimeError(f"Model {type(fractal)} has no known calculation method (calc_std_div or newton_calc).")
 
+        # 5. Post-processing Setup
+        pp = Postproc_batch(fractal, calc_name)
+        
+        # Add necessary postprocs
+        is_power_tower = isinstance(fractal, fsm.Power_tower)
+
+        if base_layer == "continuous_iter":
+            if is_power_tower:
+                # Power Tower uses 'order' (cycle period) instead of continuous iter
+                pp.add_postproc(base_layer, Raw_pp("order", func=None))
+            else:
+                pp.add_postproc(base_layer, Continuous_iter_pp())
+
+        elif base_layer == "distance_estimation":
+            # DEM often needs continuous iter too
+            if is_power_tower:
+                 # DEM not standard for Power Tower in this context, falling back to order
+                 pp.add_postproc(base_layer, Raw_pp("order", func=None))
+            else:
+                pp.add_postproc("continuous_iter", Continuous_iter_pp())
+                pp.add_postproc(base_layer, DEM_pp())
+
+        # Interior mask
+        interior_func = lambda x: x != 1 # Default 'all'
+        if interior_mask == "not_diverging":
+             interior_func = lambda x: x == 0
+        pp.add_postproc("interior", Raw_pp("stop_reason", func=interior_func))
+
+        # Fieldlines
+        if fieldlines_kind != "None":
+            f_func = fieldlines_func or {}
+            # Note: endpoint_k seems to be the correct param name in this version
+            pp.add_postproc("fieldlines", Fieldlines_pp(
+                n_iter=f_func.get("n_iter", 3),
+                swirl=f_func.get("swirl", 0.0),
+                endpoint_k=f_func.get("endpoint_k", 0.8)
+            ))
+
+        # Normals for shading
+        if shade_kind != "None":
+             pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+        # 6. Plotter Layers
         plotter = fs.Fractal_plotter(pp, final_render=True, supersampling=supersampling)
+        
+        # A. Interior Layer (Mask)
+        plotter.add_layer(Bool_layer("interior", output=False))
+        
+        # B. Fieldlines Layer (Virtual or Grey)
+        if fieldlines_kind == "twin":
+            plotter.add_layer(Virtual_layer("fieldlines", func=None, output=False))
+        elif fieldlines_kind == "overlay":
+            plotter.add_layer(Grey_layer("fieldlines", func=None, output=False))
 
+        # C. Normals Layer
+        if shade_kind != "None":
+            plotter.add_layer(Normal_map_layer("DEM_map", max_slope=45, output=False)) # Slope could be param
+
+        # D. Base Color Layer
         # Resolve Colormap
-        cmap = None
-        if isinstance(colormap, fscolors.Fractal_colormap):
-            cmap = colormap
-        elif isinstance(colormap, str):
-            if colormap not in fscolors.cmap_register:
-                # Fallback
-                available = list(fscolors.cmap_register.keys())
-                print(f"Warning: Colormap '{colormap}' not found. Available: {available[:5]}...")
-                cmap = fscolors.cmap_register.get("classic") or fscolors.cmap_register[available[0]]
-            else:
-                cmap = fscolors.cmap_register[colormap]
+        cmap_obj = colormap
+        if isinstance(colormap, str):
+            cmap_obj = fscolors.cmap_register.get(colormap, fscolors.cmap_register["classic"])
+        
+        # Color Function
+        sign = -1.0 if invert_colormap else 1.0
+        
+        if base_layer == "distance_estimation":
+            # Typical DEM log-log
+            dem_min = 1e-6 # could make configurable
+            def dem_cmap_func(x):
+                return sign * np.where(np.isinf(x), np.log(dem_min), np.log(np.clip(x, dem_min, None)))
+            func = dem_cmap_func
         else:
-            raise ValueError("colormap must be a string or a fractalshades.colors.Fractal_colormap")
+            # Continuous Iter
+            func = lambda x: sign * np.log(np.maximum(x, 1e-10))
 
-        # Default high-contrast function if none provided
-        if layer_func is None:
-            if visualization == "fieldlines":
-                layer_func = "np.sin(x * 8.0)" # Simple default for fieldlines
-            elif visualization == "dem":
-                layer_func = "np.power(x, 0.2)" # Soften DEM
+        # Probes
+        probes = [zmin, zmax] if (zmin is not None and zmax is not None) else None
+        if probes is None:
+            # Fallback defaults if not provided
+            if base_layer == "distance_estimation":
+                 probes = [0.0, 1.0] 
             else:
-                layer_func = "np.power(np.clip((np.log(x) - 2.6) / 3.4, 0.0, 1.0), 0.45)"
+                 # For continuous iter, usually a small range is okay for repeating maps
+                 probes = [0.0, 1.0]
 
-        c_layer = Color_layer(
-            layer_name,
-            func=layer_func,
-            colormap=cmap,
+        plotter.add_layer(Color_layer(
+            base_layer,
+            func=func,
+            colormap=cmap_obj,
+            probes_z=probes,
             output=True
-        )
-        
-        if add_lighting:
-            n_layer = Normal_map_layer("normals", max_slope=45, output=False)
-            plotter.add_layer(n_layer)
+        ))
+
+        # Apply Mask
+        plotter[base_layer].set_mask(plotter["interior"], mask_color=interior_color)
+
+        # Apply Twin Field
+        if fieldlines_kind == "twin":
+            twin_intensity = (fieldlines_func or {}).get("twin_intensity", 0.1)
+            plotter[base_layer].set_twin_field(plotter["fieldlines"], twin_intensity)
+        elif fieldlines_kind == "overlay":
+            overlay_mode = Overlay_mode("tint_or_shade", pegtop=1.0)
+            plotter[base_layer].overlay(plotter["fieldlines"], overlay_mode)
+
+        # Apply Shading
+        if shade_kind != "None":
+            l_conf = lighting_config or {}
+            light = Blinn_lighting(0.4, np.array([1., 1., 1.]))
             
-            lighting = Blinn_lighting(0.5, np.array([1., 1., 1.]))
-            lighting.add_light_source(
-                k_diffuse=0.8, 
-                k_specular=0.2, 
-                shininess=350., 
-                polar_angle=45., 
-                azimuth_angle=45., 
-                color=np.array([1.0, 1.0, 1.0])
+            # Primary Light
+            light.add_light_source(
+                k_diffuse=l_conf.get("k_diffuse", 0.8),
+                k_specular=l_conf.get("k_specular", 0.0),
+                shininess=l_conf.get("shininess", 350.0),
+                polar_angle=l_conf.get("polar_angle", 45.0),
+                azimuth_angle=l_conf.get("azimuth_angle", 10.0),
+                color=np.array(l_conf.get("color", [1.0, 1.0, 1.0]))
             )
-            c_layer.shade(n_layer, lighting)
+            
+            # Glossy Light
+            if shade_kind == "glossy":
+                light.add_light_source(
+                    k_diffuse=0.2,
+                    k_specular=l_conf.get("gloss_intensity", 10.0),
+                    shininess=400.0,
+                    polar_angle=l_conf.get("polar_angle", 45.0),
+                    azimuth_angle=l_conf.get("azimuth_angle", 10.0),
+                    color=np.array(l_conf.get("gloss_light_color", [1.0, 1.0, 1.0]))
+                )
+                
+            plotter[base_layer].shade(plotter["DEM_map"], light)
 
-        plotter.add_layer(c_layer)
-        
-        # Mask for interior points if requested
-        if interior_color:
-            pass
-
-        # 5. Plot
+        # 7. Plot and Save
         plotter.plot()
-
-        # 6. Move/Rename Output
-        # The output filename depends on the layer name
-        generated_filename = f"Color_layer_{layer_name}.png"
-        generated_path = os.path.join(model_dir, generated_filename)
         
-        if os.path.exists(generated_path):
-            if os.path.exists(final_path):
-                os.remove(final_path)
-            shutil.move(generated_path, final_path)
-        else:
-            # Debugging help: list what IS there
-            listing = os.listdir(model_dir)
-            raise RuntimeError(f"Fractalshades failed to generate image at {generated_path}. Found: {listing}")
+        # Move file
+        # The plotter saves as `Color_layer_{base_layer}.png` usually
+        generated_name = f"Color_layer_{base_layer}.png"
+        src = os.path.join(model_dir, generated_name)
+        if not os.path.exists(src):
+            # Fallback search
+            files = os.listdir(model_dir)
+            pngs = [f for f in files if f.endswith(".png")]
+            if pngs:
+                src = os.path.join(model_dir, pngs[0])
+            else:
+                raise RuntimeError(f"No image generated in {model_dir}")
 
-        # Cleanup temp dir
+        if os.path.exists(final_path):
+            os.remove(final_path)
+        shutil.move(src, final_path)
+        
+        # Cleanup
         shutil.rmtree(model_dir)
         
         if return_pillow_image:
-            return final_path, Image.open(final_path).convert("RGB")
+             from PIL import Image
+             return final_path, Image.open(final_path)
         
         return final_path

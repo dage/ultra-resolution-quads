@@ -1,374 +1,290 @@
 import os
 import sys
-from typing import List, Dict, Any
-
+import time
+import traceback
 from PIL import Image, ImageDraw, ImageFont
 
+# Force disable Numba caching to prevent ReferenceError: underlying object has vanished
+os.environ["NUMBA_DISABLE_CACHING"] = "1"
+# Also try setting a local cache dir just in case
+os.environ["NUMBA_CACHE_DIR"] = os.path.join(os.getcwd(), ".numba_cache")
+
 # Add project root to path
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from backend.fractal_renderer import FractalShadesRenderer
 
+OUTPUT_DIR = "artifacts/gallery_v2"
 
-def _get_fractal_configs() -> List[Dict[str, Any]]:
-    """
-    Return 16 diverse fractal views spanning several model types,
-    chosen via an automated search process for visual appeal.
-    """
-    FUNC_CLASSIC = "np.power(np.clip((np.log(x) - 2.6) / 3.4, 0.0, 1.0), 0.45)"
-
-    configs: List[Dict[str, Any]] = [
-          {
-            "name": "Elephant Valley Var",
-            "desc": "Visually stunning with rich textures and elegant curves",
-            "model": "mandelbrot",
-            "x": 0.3299789834272471,
-            "y": -0.03985010908816195,
-            "width": 0.14820262887783786,
-            "max_iter": 3299,
-            "colormap": "sunset",
-            "func": FUNC_CLASSIC,
-            "visualization": "dem",
-            "add_lighting": False,
-          },
-          {
-            "name": "Triple Spiral Var",
-            "desc": "Visually striking with rich blue gradients and intricate patterns",
-            "model": "mandelbrot",
-            "x": -0.08883271851852871,
-            "y": 0.6532067896262057,
-            "width": 0.010132953748783589,
-            "max_iter": 2940,
-            "colormap": "legacy",
-            "func": FUNC_CLASSIC,
-            "visualization": "continuous_iter",
-            "add_lighting": False,
-          },
-          {
-            "name": "Triple Spiral Var 2",
-            "desc": "Elegant gradient and intricate patterns",
-            "model": "mandelbrot",
-            "x": -0.08579269304710704,
-            "y": 0.6535056508198839,
-            "width": 0.036866865381374125,
-            "max_iter": 2951,
+GALLERY_ITEMS = [
+    {
+        "title": "1. Glossy Seahorse",
+        "desc": "Mandelbrot with 3D lighting",
+        "filename": "01_seahorse_glossy.png",
+        "params": {
+            "fractal_type": "mandelbrot",
+            "x": "-0.746223962861", "y": "-0.0959468433527", "dx": "0.00745",
+            "nx": 800, "max_iter": 2000,
+            "shade_kind": "glossy",
+            "lighting_config": {
+                "k_diffuse": 0.4, "k_specular": 30.0, "shininess": 400.0,
+                "polar_angle": 135.0, "azimuth_angle": 20.0,
+                "gloss_light_color": [1.0, 0.9, 0.9]
+            },
+            "colormap": "legacy"
+        }
+    },
+    {
+        "title": "2. Twin Fieldlines",
+        "desc": "Mandelbrot with fieldlines",
+        "filename": "02_fieldlines_twin.png",
+        "params": {
+            "fractal_type": "mandelbrot",
+            "x": "-0.1065", "y": "0.9695", "dx": "0.7",
+            "nx": 800, "max_iter": 1000,
+            "fieldlines_kind": "twin",
+            "fieldlines_func": {"n_iter": 4, "swirl": 0.0, "twin_intensity": 0.5},
+            "colormap": "ocean"
+        }
+    },
+    {
+        "title": "3. Deep Embedded Julia",
+        "desc": "Deep zoom perturbation",
+        "filename": "03_deep_embedded_julia.png",
+        "params": {
+            "fractal_type": "mandelbrot",
+            "x": "-1.768667862837488812627419470",
+            "y": "0.001645580546820209430325900",
+            "dx": "12.e-22",
+            "nx": 800, "max_iter": 10000, "precision": 30,
+            "shade_kind": "standard",
             "colormap": "classic",
-            "func": FUNC_CLASSIC,
-            "visualization": "dem",
-            "add_lighting": True,
-          },
-          {
-            "name": "Elephant Valley Var 2",
-            "desc": "Visually striking with elegant blue gradients and intricate fractal patterns",
-            "model": "mandelbrot",
-            "x": 0.3193846574562268,
-            "y": 0.1219016803920847,
-            "width": 0.8380002128857211,
-            "max_iter": 3046,
-            "colormap": "legacy",
-            "func": FUNC_CLASSIC,
-            "visualization": "dem",
-            "add_lighting": True,
-          },
-          {
-            "name": "Mandelbrot Power 4 Var",
-            "desc": "Visually striking with deep blue gradients and intricate fractal edges",
-            "model": "mandelbrot_n",
-            "x": 0.12076166124146137,
-            "y": 0.4645288213788723,
-            "width": 1.863357599138842,
-            "max_iter": 2710,
-            "colormap": "legacy",
-            "func": FUNC_CLASSIC,
-            "visualization": "dem",
-            "add_lighting": False,
-            "mandelbrot_n_exponent": 4
-          },
-          {
-            "name": "Triple Spiral Var 3",
-            "desc": "Visually striking with strong contrast and rhythmic patterns",
-            "model": "mandelbrot",
-            "x": -0.08674439834348258,
-            "y": 0.6559028378784463,
-            "width": 0.04951250981407869,
-            "max_iter": 2210,
-            "colormap": "legacy",
-            "func": FUNC_CLASSIC,
-            "visualization": "continuous_iter",
-            "add_lighting": False,
-          },
-          {
-            "name": "Mandelbrot Power 4 Var 2",
-            "desc": "Simple but recognizable fractal pattern with decent contrast",
-            "model": "mandelbrot_n",
-            "x": -0.09529814213082477,
-            "y": 0.7260553334887425,
-            "width": 2.9208162590861444,
-            "max_iter": 3201,
-            "colormap": "atoll",
-            "func": FUNC_CLASSIC,
-            "visualization": "continuous_iter",
-            "add_lighting": False,
-            "mandelbrot_n_exponent": 4
-          },
-          {
-            "name": "Elephant Valley Var 3",
-            "desc": "Minimalist and intriguing, but limited visual impact",
-            "model": "mandelbrot",
-            "x": 0.17737214809613383,
-            "y": -0.06798479675524778,
-            "width": 0.2268718369927641,
-            "max_iter": 3378,
-            "colormap": "legacy",
-            "func": FUNC_CLASSIC,
-            "visualization": "continuous_iter",
-            "add_lighting": False,
-          },
-          {
-            "name": "Mandelbrot Power 3 Var",
-            "desc": "Simple but recognizable fractal pattern with strong contrast",
-            "model": "mandelbrot_n",
-            "x": 0.21356689239306625,
-            "y": 0.42812058607133147,
-            "width": 1.0987099012226151,
-            "max_iter": 2404,
-            "colormap": "classic",
-            "func": FUNC_CLASSIC,
-            "visualization": "dem",
-            "add_lighting": False,
-            "mandelbrot_n_exponent": 3
-          },
-          {
-            "name": "Seahorse Valley Var",
-            "desc": "Simple but symmetrical, with a subtle gradient",
-            "model": "mandelbrot",
-            "x": -0.7551264211473593,
-            "y": 0.0972217272063441,
-            "width": 0.25,
-            "max_iter": 4128,
-            "colormap": "atoll",
-            "func": FUNC_CLASSIC,
-            "visualization": "continuous_iter",
-            "add_lighting": False,
-          },
-          {
-            "name": "Mandelbrot Power 3 Var 2",
-            "desc": "Symmetrical but lacks vibrant detail and color",
-            "model": "mandelbrot_n",
-            "x": 0.00321283704183295,
-            "y": 0.3446279801257034,
-            "width": 1.8454824023171301,
-            "max_iter": 2483,
-            "colormap": "autumn",
-            "func": FUNC_CLASSIC,
-            "visualization": "dem",
-            "add_lighting": False,
-            "mandelbrot_n_exponent": 3
-          },
-          {
-            "name": "Burning Ship Hull Var",
-            "desc": "Subtle gradients with a bold black contrast",
-            "model": "burning_ship",
-            "x": -1.759666115044216,
-            "y": -0.027428729969749818,
-            "width": 0.08032435789171112,
-            "max_iter": 5764,
-            "colormap": "sunset",
-            "func": FUNC_CLASSIC,
-            "visualization": "dem",
-            "add_lighting": True,
-          },
-          {
-            "name": "Mandelbrot Power 3 Var 3",
-            "desc": "Symmetrical but lacks vibrant detail and visual excitement",
-            "model": "mandelbrot_n",
-            "x": -0.23443643568006434,
-            "y": 0.7091180336278731,
-            "width": 2.678833159396925,
-            "max_iter": 2615,
-            "colormap": "autumn",
-            "func": FUNC_CLASSIC,
-            "visualization": "continuous_iter",
-            "add_lighting": False,
-            "mandelbrot_n_exponent": 3
-          },
-          {
-            "name": "Burning Ship Tail Var",
-            "desc": "Subtle texture with limited color variation",
-            "model": "burning_ship",
-            "x": -1.7782722693217992,
-            "y": -0.06569268302156242,
-            "width": 0.25451014576158504,
-            "max_iter": 6407,
-            "colormap": "legacy",
-            "func": FUNC_CLASSIC,
-            "visualization": "dem",
-            "add_lighting": True,
-          },
-          {
-            "name": "Mandelbrot Power 3 Var 4",
-            "desc": "Minimalist and abstract, but lacks visual complexity",
-            "model": "mandelbrot_n",
-            "x": -0.048432846055270706,
-            "y": 0.7427349452206422,
-            "width": 0.6204880663866617,
-            "max_iter": 3237,
-            "colormap": "autumn",
-            "func": FUNC_CLASSIC,
-            "visualization": "continuous_iter",
-            "add_lighting": False,
-            "mandelbrot_n_exponent": 3
-          },
-          {
-            "name": "Elephant Valley Var 4",
-            "desc": "Minimalist and abstract, with subtle gradient and sparse detail",
-            "model": "mandelbrot",
-            "x": 0.4048802154829432,
-            "y": -0.050553764323954066,
-            "width": 0.4115893204747487,
-            "max_iter": 3066,
-            "colormap": "autumn",
-            "func": FUNC_CLASSIC,
-            "visualization": "continuous_iter",
-            "add_lighting": False,
-          }
-    ]
+            # Fixed: Added zmin/zmax to prevent black image
+            "base_layer": "distance_estimation",
+            "zmin": 9.015, "zmax": 9.025,
+            # Fieldlines disabled for stability in this specific deep zoom context
+            "lighting_config": {"k_diffuse": 0.4, "k_specular": 10.0}
+        }
+    },
+    {
+        "title": "4. Burning Ship Deep",
+        "desc": "BS deep zoom with skew",
+        "filename": "04_burning_ship_deep.png",
+        "params": {
+            "fractal_type": "burning_ship",
+            "x": "0.533551593577038561769721161491702555962775680136595415306315189524970818968817900068355227861158570104764433694",
+            "y": "1.26175074578870311547721223871955368990255513054155186351034363459852900933566891849764050954410207620093433856",
+            "dx": "7.072814368784043e-101",
+            "nx": 800, "max_iter": 5000, "precision": 150,
+            "xy_ratio": 1.8, "theta_deg": -2.0,
+            "skew_params": {
+                "skew_00": 1.3141410612942215, "skew_01": 0.8651590600810832,
+                "skew_10": 0.6372176654581702, "skew_11": 1.1804627997751416
+            },
+            "base_layer": "distance_estimation",
+            "colormap": "dawn",
+            # Fixed: Added probes from example 14
+            "zmin": -9.90, "zmax": -4.94
+        }
+    },
+    {
+        "title": "5. Perp. Burning Ship",
+        "desc": "Glynn Spiral (Hidden)",
+        "filename": "05_perp_bs_glynn.png",
+        "params": {
+            "fractal_type": "perpendicular_burning_ship",
+            "flavor": "Perpendicular burning ship",
+            "x": "-1.6221172452279831275586824847368230989301274844265",
+            "y": "-0.0043849065564689427951877101597546609652950526531633",
+            "dx": "4.646303299697506e-40",
+            "nx": 800, "max_iter": 20000, "precision": 55,
+            "xy_ratio": 1.8, "theta_deg": -2.0,
+            "skew_params": {
+                "skew_00": 1.011753723519244, "skew_01": -1.157539989768796,
+                "skew_10": -0.5299787188179303, "skew_11": 1.5947275737676074
+            },
+            "base_layer": "distance_estimation",
+            "shade_kind": "glossy",
+            "colormap": "peacock",
+            # Fixed: Added probes from example 18
+            "zmin": 6.54, "zmax": 18.42
+        }
+    },
+    {
+        "title": "6. Perp. BS Sierpinski",
+        "desc": "Sierpinski Carpets",
+        "filename": "06_perp_bs_sierpinski.png",
+        "params": {
+            "fractal_type": "perpendicular_burning_ship",
+            "flavor": "Perpendicular burning ship",
+            "x": "-1.929319698524937920226708049698305350754670432084006734339806946",
+            "y": "-0.0000000000000000007592779387989739090287550144163328879329853232537252481600401185",
+            "dx": "7.032184999234219e-55",
+            "nx": 800, "max_iter": 20000, "precision": 64,
+            "xy_ratio": 1.6, "theta_deg": -26.0,
+            "skew_params": {
+                "skew_00": 1.05, "skew_01": 0.0,
+                "skew_10": -0.1, "skew_11": 0.9523809
+            },
+            "shade_kind": "glossy",
+            "base_layer": "distance_estimation",
+            "colormap": "hot",
+            # Fixed: Added probes from example 20
+            "zmin": 8.71, "zmax": 9.90
+        }
+    },
+    {
+        "title": "7. Perp. BS Trees",
+        "desc": "Tree structures",
+        "filename": "07_perp_bs_trees.png",
+        "params": {
+            "fractal_type": "perpendicular_burning_ship",
+            "flavor": "Perpendicular burning ship",
+            "x": "-1.60075649116104853234447567671822519294",
+            "y": "-0.00000585584069328913182973043272000146363667",
+            "dx": "1.345424030679299e-29",
+            "nx": 800, "max_iter": 6000, "precision": 64,
+            "xy_ratio": 1.6, "theta_deg": 120.0,
+            "skew_params": {
+                "skew_00": -0.985244568474214, "skew_01": 0.6137988525,
+                "skew_10": 0.8089497623371, "skew_11": -1.518945126681
+            },
+            "shade_kind": "glossy",
+            "colormap": "spring",
+            # Added probes from example 21 just in case, though previous run was okay
+            "zmin": 7.51, "zmax": 8.06
+        }
+    },
+    {
+        "title": "8. Shark Fin",
+        "desc": "Shark Fin flavor",
+        "filename": "08_shark_fin.png",
+        "params": {
+            "fractal_type": "shark_fin",
+            "flavor": "Shark fin",
+            "x": "-0.5", "y": "-0.65", "dx": "0.5", 
+            "nx": 800, "max_iter": 1500,
+            "colormap": "blue_brown"
+        }
+    },
+    {
+        "title": "9. Power Tower",
+        "desc": "Tetration map",
+        "filename": "09_power_tower.png",
+        "params": {
+            "fractal_type": "power_tower",
+            "x": 1.40735, "y": -3.36277, "dx": 0.0005,
+            "nx": 800, "max_iter": 200,
+            "colormap": "flower"
+        }
+    },
+    {
+        "title": "10. Multibrot Power 4",
+        "desc": "Mandelbrot N=4",
+        "filename": "10_multibrot_p4.png",
+        "params": {
+            "fractal_type": "mandelbrot_n",
+            "exponent": 4,
+            "x": "0.0", "y": "0.0", "dx": "2.5",
+            "nx": 800, "max_iter": 1500,
+            "colormap": "autumn"
+        }
+    }
+]
 
-    return configs
-
-
-def create_gallery() -> None:
-    """
-    Render 16 diverse Mandelbrot tiles and compose them into a 4x4 gallery.
-    The specific views were chosen (with help from the analyzer tool) to avoid
-    uniform backgrounds and cover several visually distinct regions.
-    """
-    output_dir = os.path.join("artifacts", "gallery_experiment")
-    os.makedirs(output_dir, exist_ok=True)
-
-    renderer = FractalShadesRenderer(output_dir, verbosity=1)
-    configs = _get_fractal_configs()
-
-    rendered_paths: List[Dict[str, Any]] = []
-
-    print(f"Rendering {len(configs)} diverse fractals...")
-    for i, conf in enumerate(configs):
-        fname = f"fractal_{i:02d}.png"
-        print(f"\n[{i+1}/{len(configs)}] Rendering {conf['name']}...")
-        try:
-            render_kwargs = {
-                "center_x": conf["x"],
-                "center_y": conf["y"],
-                "width": conf["width"],
-                "img_size": 512,
-                "max_iter": conf["max_iter"],
-                "filename": fname,
-                "colormap": conf.get("colormap", "classic"),
-                "layer_func": conf.get("func"),
-                "model": conf.get("model", "mandelbrot"),
-                "visualization": conf.get("visualization", "continuous_iter"),
-                "add_lighting": conf.get("add_lighting", False)
-            }
-            
-            if "mandelbrot_n_exponent" in conf:
-                render_kwargs["mandelbrot_n_exponent"] = conf["mandelbrot_n_exponent"]
-
-            path = renderer.render(**render_kwargs)
-            print(f"  Saved: {path}")
-            item = dict(conf)
-            item["path"] = path
-            rendered_paths.append(item)
-        except Exception as e:
-            print(f"  ERROR rendering {conf['name']}: {e}")
-
-    if not rendered_paths:
-        print("No images rendered. Exiting.")
-        return
-
-    print("\nConstructing 4x4 gallery...")
-
-    cols = 4
-    rows = 4
-    tile_size = 512
-    padding = 50
-    text_height = 100
-
-    gallery_w = cols * tile_size + (cols + 1) * padding
-    gallery_h = rows * (tile_size + text_height) + (rows + 1) * padding
-
-    gallery = Image.new("RGB", (gallery_w, gallery_h), (30, 30, 30))
-    draw = ImageDraw.Draw(gallery)
-
-    # Font handling
+def create_composite_gallery(items, output_path):
+    """Creates a labeled grid image of all fractals."""
+    print("\nGenerating composite gallery image...")
+    
+    cols = 5
+    rows = (len(items) + cols - 1) // cols
+    
+    # Config
+    tile_w, tile_h = 400, 300 # Resize for grid
+    padding = 20
+    text_h = 60
+    
+    full_w = cols * tile_w + (cols + 1) * padding
+    full_h = rows * (tile_h + text_h) + (rows + 1) * padding
+    
+    bg_color = (20, 20, 20)
+    text_color = (220, 220, 220)
+    
+    gallery_img = Image.new("RGB", (full_w, full_h), bg_color)
+    draw = ImageDraw.Draw(gallery_img)
+    
+    # Try to load a font
     try:
-        font_paths = [
-            "/System/Library/Fonts/Helvetica.ttc",  # macOS
-            "/System/Library/Fonts/Supplemental/Arial.ttf",  # macOS
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux
-            "C:\\Windows\\Fonts\\arial.ttf",  # Windows
-        ]
-        font_path = None
-        for p in font_paths:
-            if os.path.exists(p):
-                font_path = p
-                break
-
-        if font_path:
-            font_title = ImageFont.truetype(font_path, 28)
-            font_desc = ImageFont.truetype(font_path, 18)
-        else:
-            raise Exception("No system font found")
-    except Exception:
-        print("Using default font.")
-        font_title = ImageFont.load_default()
-        font_desc = ImageFont.load_default()
-
-    for i, conf in enumerate(rendered_paths[:16]):
-        r = i // cols
-        c = i % cols
-
+        # Mac default
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 16)
+        font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 12)
+    except:
         try:
-            img = Image.open(conf["path"]).convert("RGB")
+            # Linux default
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+        except:
+            font = ImageFont.load_default()
+            font_small = ImageFont.load_default()
+
+    for i, item in enumerate(items):
+        r, c = divmod(i, cols)
+        
+        # Load and resize image
+        img_path = os.path.join(OUTPUT_DIR, item["filename"])
+        try:
+            with Image.open(img_path) as img:
+                # Resize preserving aspect ratio logic could go here, but strict resize is easier for grid
+                # We generated them at 800x? depending on ratio. Let's crop/resize to fit tile
+                img = img.convert("RGB")
+                img.thumbnail((tile_w, tile_h), Image.Resampling.LANCZOS)
+                
+                # Paste coordinates
+                x_off = padding + c * (tile_w + padding)
+                y_off = padding + r * (tile_h + text_h + padding)
+                
+                # Center image in slot
+                paste_x = x_off + (tile_w - img.width) // 2
+                paste_y = y_off + (tile_h - img.height) // 2
+                
+                gallery_img.paste(img, (paste_x, paste_y))
+                
+                # Draw text
+                text_y = y_off + tile_h + 5
+                draw.text((x_off, text_y), item["title"], font=font, fill=text_color)
+                draw.text((x_off, text_y + 20), item["desc"], font=font_small, fill=(150, 150, 150))
+                
         except Exception as e:
-            print(f"Error opening {conf['path']}: {e}")
-            continue
+            print(f"Failed to process image {item['filename']}: {e}")
 
-        x_off = padding + c * (tile_size + padding)
-        y_off = padding + r * (tile_size + text_height + padding)
+    gallery_img.save(output_path)
+    print(f"Gallery saved to: {output_path}")
 
-        gallery.paste(img, (x_off, y_off))
+def run_gallery():
+    print(f"Generating diverse gallery in: {OUTPUT_DIR}")
+    # Ensure cache dir exists
+    os.makedirs(os.environ["NUMBA_CACHE_DIR"], exist_ok=True)
+    
+    renderer = FractalShadesRenderer(OUTPUT_DIR)
+    start_time = time.time()
+    
+    successful_items = []
 
-        text_y = y_off + tile_size + 15
+    for item in GALLERY_ITEMS:
+        print(f"\nRendering {item['title']}...")
+        try:
+            renderer.render(filename=item["filename"], **item["params"])
+            successful_items.append(item)
+        except Exception as e:
+            print(f"❌ Error rendering {item['title']}: {e}")
+            traceback.print_exc()
 
-        draw.text((x_off, text_y), conf["name"], font=font_title, fill=(255, 255, 255))
-        
-        # Truncate desc if too long
-        desc = conf["desc"]
-        if len(desc) > 50:
-            desc = desc[:47] + "..."
-            
-        draw.text(
-            (x_off, text_y + 35),
-            desc,
-            font=font_desc,
-            fill=(200, 200, 200),
-        )
-
-        specs = (
-            f"Pos: {conf['x']:.4f}, {conf['y']:.4f} | "
-            f"W: {conf['width']:.2e} | Iter: {conf['max_iter']}"
-        )
-        draw.text((x_off, text_y + 60), specs, font=font_desc, fill=(150, 150, 150))
-        
-        model_info = f"Model: {conf.get('model', 'mandelbrot')}"
-        if "mandelbrot_n_exponent" in conf:
-            model_info += f"^{conf['mandelbrot_n_exponent']}"
-        draw.text((x_off, text_y + 80), model_info, font=font_desc, fill=(150, 150, 150))
-
-    gallery_path = os.path.join(output_dir, "gallery_full.png")
-    gallery.save(gallery_path)
-    print(f"Gallery saved to {gallery_path}")
-
+    duration = time.time() - start_time
+    print(f"\nAll renders complete in {duration:.2f}s")
+    
+    if successful_items:
+        composite_path = os.path.join(OUTPUT_DIR, "fractal_gallery_composite.png")
+        create_composite_gallery(successful_items, composite_path)
 
 if __name__ == "__main__":
-    create_gallery()
+    run_gallery()

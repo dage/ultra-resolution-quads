@@ -1,0 +1,3944 @@
+Directory structure:
+└── batch_mode/
+    ├── README.rst
+    ├── 01-full_basic.py
+    ├── 02-bulb_fieldlines1.py
+    ├── 03-bulb_fieldlines2.py
+    ├── 04-seahorse_shaded.py
+    ├── 05-seahorse_shaded_colored.py
+    ├── 06-seahorse_interior.py
+    ├── 07-seahorse_DEM.py
+    ├── 08-run_perturb_DEM.py
+    ├── 09-run_flake_DEM.py
+    ├── 10-double_embedded_julia.py
+    ├── 11-run_perturbdeep.py
+    ├── 12-burning_ship_deep.py
+    ├── 13-burning_ship.py
+    ├── 14-burning_ship-deeper_DEM.py
+    ├── 15-burning_ship-deepJulia_DEM.py
+    ├── 16-tetration_spring.py
+    ├── 17-perpendicular_burning_ship_DEM.py
+    ├── 18-perpendicular_burning_ship_glynn.py
+    ├── 19-perpendicular_burning_ship_Koch.py
+    ├── 20-perpendicular_burning_ship_Sierpinski.py
+    ├── 21-perpendicular_burning_ship_trees.py
+    ├── 22-shark_fin_deep.py
+    └── 23-deep_min.py
+
+================================================
+FILE: examples/batch_mode/README.rst
+================================================
+Batch mode gallery
+==================
+
+
+
+
+================================================
+FILE: examples/batch_mode/01-full_basic.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+==================================
+01 - Full Mandelbrot basic example
+==================================
+
+This basic example shows how to create a color layer, displaying the 
+"continuous iteration number" for Mandelbrot (power 2) fractal.
+
+The full Mandelbrot set is diplayed here.
+
+Reference:
+`fractalshades.models.Mandelbrot`
+"""
+import os
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.colors as fscolors
+import fractalshades.projection
+
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+)
+
+def plot(plot_dir):
+    """
+    A very simple example: full view of the Mandelbrot set with escape-time
+    coloring
+    """
+    fs.settings.enable_multithreading = False
+    fs.settings.log_directory = os.path.join(plot_dir, "log")
+    fs.set_log_handlers(verbosity="debug @ console + log")
+    # Define the parameters for this calculation
+    x = -1.0
+    y = -0.0
+    dx = 5.
+    nx = 2400
+    
+    calc_name="mandelbrot"
+    colormap = fscolors.cmap_register["classic"]
+
+    # Run the calculation
+    f = fsm.Mandelbrot(plot_dir)
+    f.zoom(x=x, y=y, dx=dx, nx=nx, xy_ratio=1.0,
+           projection=fs.projection.Cartesian(),
+           theta_deg=0.)
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=1000,
+        M_divergence=1000.,
+        epsilon_stationnary= 0.001,
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+
+    plotter = fs.Fractal_plotter(pp)
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Color_layer(
+            "cont_iter",
+            func="np.log(x)",
+            colormap=colormap,
+            probes_z=[1., 3.],
+            output=True
+    ))
+
+    plotter["cont_iter"].set_mask(
+            plotter["interior"],
+            mask_color=(0.1, 0.1, 0.1)
+    )
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/02-bulb_fieldlines1.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+============================================
+02 - Bulb fieldlines example "tint_or_shade"
+============================================
+
+This example shows one of the ways to plot fieldlines: here the fieldlines 
+values are used to modify the original layer colors : they are tinted or
+shaded.
+Notice the use of `calc_orbit` and backshift` during the calculation.
+
+The location is around the 1/3 main bulb.
+
+Reference:
+`fractalshades.models.Mandelbrot`
+"""
+import os
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    Fieldlines_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Grey_layer,
+    Overlay_mode
+)
+
+def plot(plot_dir):
+    """
+    Using field lines : a shallow zoom in the Seahorses valley
+    Coloring based on continuous iteration
+    Colors 'tinted or shaded' by the fieldliles
+    """
+    # Define the parameters for this calculation
+    x = -0.10658790036
+    y = 0.96946619217
+    dx = 0.6947111395902539
+    nx = 2400
+    projection = fs.projection.Cartesian()
+
+    calc_name="mandelbrot"
+    colormap = fscolors.cmap_register["dawn"]
+
+    # Run the calculation
+    f = fsm.Mandelbrot(plot_dir)
+    f.zoom(x=x, y=y, dx=dx, nx=nx, xy_ratio=1.0,
+           theta_deg=0., projection=projection)
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=5000,
+        M_divergence=100.,
+        epsilon_stationnary= 0.01,
+        calc_orbit=True,
+        backshift=3
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc(
+        "fieldlines",
+        Fieldlines_pp(n_iter=4, swirl=0., endpoint_k=1.0)
+    )
+
+    plotter = fs.Fractal_plotter(pp)
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Color_layer(
+            "cont_iter",
+            func="np.log(x)",
+            colormap=colormap,
+            probes_z=[0.5, 2.1],
+            output=True
+    ))
+    plotter.add_layer(
+            Grey_layer("fieldlines", func=None, output=True,
+            probes_z=[-0.6281, 0.952])
+    )
+    plotter["cont_iter"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+    # This is the lines where we indicate that coloring is shaded or tinted
+    # depending on "fieldines" values
+    overlay_mode = Overlay_mode("tint_or_shade", pegtop=1.)
+    plotter["cont_iter"].overlay(plotter["fieldlines"], overlay_mode)
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/03-bulb_fieldlines2.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+========================================
+03 - Bulb fieldlines example "twinfield"
+========================================
+
+This example shows one of the ways to plot fieldlines: here the fieldlines 
+values are used to modify the original layer values before applying the
+colormap.
+Notice the use of `calc_orbit` and backshift` during the calculation.
+
+The location is around the 1/3 main bulb.
+
+Reference:
+`fractalshades.models.Mandelbrot`
+"""
+
+import os
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    Fieldlines_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Virtual_layer
+)
+
+def plot(plot_dir):
+    """
+    Using field lines : a shallow zoom in the Seahorses valley
+    Coloring based on continuous iteration + fieldlines
+    """
+    # Define the parameters for this calculation
+    x = -0.10658790036
+    y = 0.96946619217
+    dx = 0.6947111395902539
+    nx = 2400
+    projection = fs.projection.Cartesian()
+
+    calc_name="mandelbrot"
+    colormap = fscolors.cmap_register["classic"]
+
+    # Run the calculation
+    f = fsm.Mandelbrot(plot_dir)
+    f.zoom(x=x, y=y, dx=dx, nx=nx, xy_ratio=1.0,
+           theta_deg=0., projection=projection)
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=5000,
+        M_divergence=100.,
+        epsilon_stationnary= 0.001,
+        calc_orbit=True,
+        backshift=3
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("fieldlines",
+                Fieldlines_pp(n_iter=4, swirl=0., endpoint_k=0.8))
+
+    plotter = fs.Fractal_plotter(pp)
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Color_layer(
+            "cont_iter",
+            func="np.log(x)",
+            colormap=colormap,
+            probes_z=[0.4, 2.4],
+            output=True
+    ))
+    plotter.add_layer(Virtual_layer("fieldlines", func=None, output=False))
+    plotter["cont_iter"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+
+    # This is the line where we indicate that coloring is a combination of
+    # "Continuous iteration" and "fieldines values"
+    plotter["cont_iter"].set_twin_field(plotter["fieldlines"], -0.4)
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/04-seahorse_shaded.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+============================
+04 - Seahorse shaded example
+============================
+
+This example shows how to create a normal map layer, and link it to a base
+color layer to enable scene lighting.
+Here a fully grey background is used, and the normal map layer is based on
+"Milnor estimator".
+
+The location is a shallow one in the main Seahorse valley.
+
+Reference:
+`fractalshades.models.Mandelbrot`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Blinn_lighting
+)
+
+def plot(plot_dir):
+    """
+    Using lighting : a shallow zoom in the Seahorses valley
+    Coloring based on continuous iteration + lighting with a normal maps from
+    distance estimation method
+    """
+    fs.settings.enable_multithreading = True
+    fs.settings.log_directory = os.path.join(plot_dir, "log")
+    fs.set_log_handlers(verbosity="debug @ console + log")
+    # Define the parameters for this calculation
+    x = -0.746223962861
+    y = -0.0959468433527
+    dx = 0.00745
+    nx = 2400
+
+    calc_name="mandelbrot"
+    colormap = fscolors.Fractal_colormap(
+            colors=[[0.5, 0.5, 0.5],
+                    [0.5, 0.5, 0.5]],
+            kinds=['Lab'],
+            grad_npts=[2],
+            grad_funcs=['x'],
+            extent='mirror'
+        )
+
+    # Run the calculation
+    f = fsm.Mandelbrot(plot_dir)
+    f.zoom(x=x, y=y, dx=dx, nx=nx, xy_ratio=1.0,
+           theta_deg=0., projection=fs.projection.Cartesian())
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=25000,
+        M_divergence=100.,
+        epsilon_stationnary= 0.01,
+        calc_d2zndc2=True
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="Milnor"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Normal_map_layer("DEM_map", max_slope=60, output=False))
+    plotter.add_layer(Color_layer(
+            "cont_iter",
+            func="np.log(x)",
+            colormap=colormap,
+            probes_z=[1., 2.],
+            output=True
+    ))
+
+    plotter["cont_iter"].set_mask(plotter["interior"], mask_color=(0., 0., 0.5))
+    plotter["DEM_map"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+
+    # This is where we define the lighting (here 3 ccolored light sources)
+    # and apply the shading
+    light = Blinn_lighting(0.25, np.array([1., 1., 1.]))
+    light.add_light_source(
+        k_diffuse=3.0,
+        k_specular=0.1,
+        shininess=400.,
+        polar_angle=45.,
+        azimuth_angle=40.,
+        color=np.array([1.0, 1.0, 1.0])
+    )
+    plotter["cont_iter"].shade(plotter["DEM_map"], light)
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/05-seahorse_shaded_colored.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+========================================
+05 - Seahorse shaded and colored example
+========================================
+
+This example shows how to create a normal map layer, and link it to a base
+color layer to enable scene lighting.
+Here a:
+    
+    - A colored background based on the continuous iteration number is used, and
+      the normal map layer is based on "potential estimator".
+    - The normal map itself is also output (OpenGL normal map format)
+
+The location is a shallow one in the main Seahorse valley.
+
+Reference:
+`fractalshades.models.Mandelbrot`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Blinn_lighting
+)
+
+def plot(plot_dir):
+    """
+    Using lighting : a shallow zoom in the Seahorses valley
+    Coloring based on continuous iteration + lighting with a normal maps from
+    distance estimation method
+    """
+    fs.settings.enable_multithreading = True
+    # Define the parameters for this calculation
+    x = -0.746223962861
+    y = -0.0959468433527
+    dx = 0.00745
+    nx = 2400
+
+    calc_name="mandelbrot"
+    colormap = fscolors.cmap_register["legacy"]
+
+    # Run the calculation
+    f = fsm.Mandelbrot(plot_dir)
+    f.zoom(x=x, y=y, dx=dx, nx=nx, xy_ratio=1.0,
+           theta_deg=0., projection=fs.projection.Cartesian())
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=25000,
+        M_divergence=100.,
+        epsilon_stationnary= 0.01,
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Normal_map_layer("DEM_map", max_slope=45, output=False))
+    plotter.add_layer(Color_layer(
+            "cont_iter",
+            func="np.log(x)",
+            colormap=colormap,
+            probes_z=[1., 2.],
+            output=True
+    ))
+
+    plotter["cont_iter"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+    plotter["DEM_map"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+
+    # This is where we define the lighting (here 3 ccolored light sources)
+    # and apply the shading
+    light = Blinn_lighting(0.35, np.array([1., 1., 1.]))
+    light.add_light_source(
+        k_diffuse=0.2,
+        k_specular=25.,
+        shininess=400.,
+        polar_angle=-135.,
+        azimuth_angle=0.,
+        color=np.array([0.05, 0.05, 1.0])
+    )
+    light.add_light_source(
+        k_diffuse=0.2,
+        k_specular=10.,
+        shininess=400.,
+        polar_angle=135.,
+        azimuth_angle=0.,
+        color=np.array([0.5, 0.5, .4])
+    )
+    light.add_light_source(
+        k_diffuse=1.3,
+        k_specular=0.,
+        shininess=0.,
+        polar_angle=90.,
+        azimuth_angle=10.,
+        color=np.array([1.0, 1.0, 1.0])
+    )
+    plotter["cont_iter"].shade(plotter["DEM_map"], light)
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/06-seahorse_interior.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+==============================
+06 - Seahorse interior example
+==============================
+
+This example shows how to use several layers to plot both the divergent and
+convergent part of a fractal.
+
+The location is a shallow one in the main Seahorse valley.
+
+Reference:
+`fractalshades.models.Mandelbrot`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    Fieldlines_pp,
+    Raw_pp,
+    Fractal_array,
+    Attr_pp,
+    Attr_normal_pp
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Grey_layer,
+    Blinn_lighting,
+    Overlay_mode
+)
+
+
+def plot(plot_dir=None):
+    """
+    Combining all : a shallow zoom in the Seahorses valley
+    Coloring of escaping points based on continuous iteration + lighting with a
+    normal maps from distance estimation method
+    Coloring of interior points based on the attracting cycle attractivity
+    """
+    fs.settings.enable_multithreading = True
+    fs.settings.log_directory = os.path.join(plot_dir, "log")
+    fs.set_log_handlers(verbosity="debug @ console + log")
+
+    # Define the parameters for this calculation
+    x = -0.746223962861
+    y = -0.0959468433527
+    dx = 0.00745
+    nx = 2400
+    fs.settings.optimize_RAM = True
+
+    calc_name="escaping"
+
+    colormap = fscolors.cmap_register["legacy"]
+    colormap_int = fscolors.cmap_register["legacy"]
+
+    # Run the calculation
+    f = fsm.Mandelbrot(plot_dir)
+    f.zoom(x=x, y=y, dx=dx, nx=nx, xy_ratio=1.0,
+           theta_deg=0., projection=fs.projection.Cartesian())
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=25000,
+        M_divergence=40.,
+        epsilon_stationnary= 0.001,
+        calc_orbit=True,
+        backshift=3
+    )
+
+    # Run the calculation for the interior points
+    interior = Fractal_array(f, "escaping", "stop_reason", func= "x != 1")
+    f.newton_calc(
+        calc_name="interior",
+        subset=interior,
+        known_orders=None,
+        max_order=1500,
+        max_newton=20,
+        eps_newton_cv=1.e-12,
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    #pp.add_postproc("div", Raw_pp("stop_reason", func="x == 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+    pp.add_postproc("fieldlines",
+                Fieldlines_pp(n_iter=4, swirl=0.0, endpoint_k=0.6))
+
+    # Defines a second pastproc batch for interior points
+    pp_int = Postproc_batch(f, "interior")
+    pp_int.add_postproc("attr_map", Attr_normal_pp())
+    pp_int.add_postproc("attr", Attr_pp())
+    pp_int.add_postproc("div", Raw_pp("stop_reason", func="x == 0"))
+
+    plotter = fs.Fractal_plotter([pp, pp_int])
+
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Bool_layer("div", output=False))
+    plotter.add_layer(Normal_map_layer("DEM_map", max_slope=30, output=False))
+    plotter.add_layer(Normal_map_layer("attr_map", max_slope=90, output=False))
+    plotter.add_layer(Color_layer(
+            "cont_iter",
+            func="np.log(x)",
+            colormap=colormap,
+            probes_z=[1., 2.],
+            output=True
+    ))
+    plotter.add_layer(Color_layer(
+            "attr",
+            func=None,
+            colormap=colormap_int,
+            probes_z=[1., 2.],
+            output=False))
+    plotter.add_layer(
+        Grey_layer("fieldlines", func=None,
+                   probes_z=[-2, 2],
+                   output=False)
+    )
+
+    # plotter["cont_iter"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+    plotter["DEM_map"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+
+    plotter["attr"].set_mask(plotter["div"], mask_color=(0.9568, 0.8039, 0.9372))
+
+    # This is where we define the lighting (here 3 ccolored light sources)
+    # and apply the shading
+    light = Blinn_lighting(0.35, np.array([1., 1., 1.]))
+    light.add_light_source(
+        k_diffuse=0.2,
+        k_specular=25.,
+        shininess=400.,
+        polar_angle=-135.,
+        azimuth_angle=15.,
+        color=np.array([0.05, 0.05, 1.0])
+    )
+    light.add_light_source(
+        k_diffuse=0.2,
+        k_specular=10.,
+        shininess=400.,
+        polar_angle=135.,
+        azimuth_angle=15.,
+        color=np.array([0.5, 0.5, .4])
+    )
+    light.add_light_source(
+        k_diffuse=1.3,
+        k_specular=0.,
+        shininess=0.,
+        polar_angle=90.,
+        azimuth_angle=10.,
+        color=np.array([1.0, 1.0, 1.0])
+    )
+    plotter["cont_iter"].shade(plotter["DEM_map"], light)
+
+    # Adds some shading based on the previouly defined normal maps
+    plotter["cont_iter"].shade(plotter["DEM_map"], light)
+    plotter["attr"].shade(plotter["attr_map"], light)
+
+    # Overlay : tint or shade depending on fieldlines layer value
+    overlay_mode = Overlay_mode("tint_or_shade", pegtop=1.)
+    plotter["cont_iter"].overlay(plotter["fieldlines"], overlay_mode)
+
+    # Overlay : alpha composite with "interior" layer ie, where it is not
+    # masked, we take the value of the "attr" layer
+    overlay_mode = Overlay_mode(
+            "alpha_composite",
+            alpha_mask=plotter["interior"],
+            inverse_mask=True
+    )
+    plotter["cont_iter"].overlay(plotter["attr"], overlay_mode=overlay_mode)
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/07-seahorse_DEM.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+=========================
+07 - Seahorse DEM example
+=========================
+
+This example shows how to create a color layer, displaying the 
+distance estimation for Mandelbrot (power 2) fractal.
+
+The location is a shallow one in the main Seahorse valley.
+
+Reference:
+`fractalshades.models.Mandelbrot`
+"""
+import os
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    DEM_pp,
+    Continuous_iter_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Virtual_layer,
+)
+
+def plot(plot_dir):
+    """
+    A very simple example: full view of the Mandelbrot set with escape-time
+    coloring
+    """
+    fs.settings.enable_multithreading = True
+    fs.settings.log_directory = os.path.join(plot_dir, "log")
+    fs.set_log_handlers(verbosity="debug @ console + log")
+
+    # Define the parameters for this calculation
+    x = -0.746223962861
+    y = -0.0959468433527
+    dx = 0.00745
+    nx = 2400
+    projection = fs.projection.Cartesian()
+
+    calc_name="mandelbrot"
+    colormap = fscolors.cmap_register["valensole"]
+
+    # Run the calculation
+    f = fsm.Mandelbrot(plot_dir)
+    f.zoom(x=x, y=y, dx=dx, nx=nx, xy_ratio=1.0,
+           theta_deg=0., projection=projection)
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=20000,
+        M_divergence=100.,
+        epsilon_stationnary= 0.005,
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("DEM", DEM_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+
+    plotter = fs.Fractal_plotter(pp)
+    plotter.add_layer(Bool_layer("interior", output=False))
+    
+    plotter.add_layer(Virtual_layer("cont_iter", func=None, output=False))
+    plotter.add_layer(Color_layer(
+            "DEM",
+            func="np.log(x + 1e-8)",
+            colormap=colormap,
+            probes_z=[19.5, 40.],
+            output=True
+    ))
+
+    plotter["DEM"].set_mask(
+            plotter["interior"],
+            mask_color=(0., 0., 0.)
+    )
+    
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/08-run_perturb_DEM.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+==================================
+08 - DEM example with perturbation
+==================================
+
+This example shows how to create a color layer, displaying the 
+distance estimation for Mandelbrot (power 2) fractal.
+
+The location, at 16.e-22, is below the reach of double, pertubation theory must
+be used.
+
+Reference:
+`fractalshades.models.Perturbation_mandelbrot`
+"""
+
+import os
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.settings as settings
+import fractalshades.colors as fscolors
+
+
+from fractalshades.postproc import (
+    Postproc_batch,
+    DEM_pp,
+    Continuous_iter_pp,
+    Raw_pp,
+    DEM_normal_pp,
+    # Fieldlines_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    # Blinn_lighting,
+    # Normal_map_layer,
+    Virtual_layer,
+)
+
+def plot(directory):
+    """
+    Example plot of distance estimation method
+    """
+    settings.enable_multithreading = True
+
+    # A simple showcas using perturbation technique
+    x = "-1.768667862837488812627419470"
+    y = "0.001645580546820209430325900"
+    dx = "16.e-22"
+    precision = 30
+    nx = 2400
+
+    colormap = fscolors.cmap_register["autumn"]
+
+    f = fsm.Perturbation_mandelbrot(directory)
+    f.zoom(precision=precision,
+            x=x,
+            y=y,
+            dx=dx,
+            nx=nx,
+            xy_ratio=1.0,
+            theta_deg=0., 
+            projection=fs.projection.Cartesian()
+    )
+
+    f.calc_std_div(
+            calc_name="div",
+            subset=None,
+            max_iter=50000, #00,
+            M_divergence=1.e3,
+            epsilon_stationnary=1.e-3,
+            BLA_eps=1.e-6,
+            interior_detect=True,
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, "div")
+    pp.add_postproc("potential", Continuous_iter_pp())
+    pp.add_postproc("DEM", DEM_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+    
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Virtual_layer("potential", func=None, output=False))
+    plotter.add_layer(Color_layer(
+            "DEM",
+            func="x",
+            colormap=colormap,
+            probes_z=[0.01061, 0.03184],
+            output=True
+    ))
+    plotter["DEM"].set_mask(
+            plotter["interior"],
+            mask_color=(0., 0., 0.)
+    )
+    
+    plotter.plot()
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/09-run_flake_DEM.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+=========================
+09 - A deeper DEM example
+=========================
+
+This example shows how to create a color layer which displays a 
+distance estimation from the Mandelbrot (power 2) fractal.
+
+The location, at 1.8e-157, is well below the separation power of double,
+pertubation theory must be used. This location, "Dinkidau flake", is a
+common test for numerical reliability.
+
+Reference:
+`fractalshades.models.Perturbation_mandelbrot`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.settings as settings
+import fractalshades.colors as fscolors
+import fractalshades.projection
+
+
+from fractalshades.postproc import (
+    Postproc_batch,
+    DEM_pp,
+    Continuous_iter_pp,
+    Raw_pp,
+    DEM_normal_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting
+)
+
+def plot(directory):
+    """
+    Example plot of distance estimation method
+    """
+    settings.enable_multithreading = True
+    # A simple showcase using perturbation technique
+    precision = 165
+    nx = 2400
+    x = '-1.99996619445037030418434688506350579675531241540724851511761922944801584242342684381376129778868913812287046406560949864353810575744772166485672496092803920095332'
+    y = '-0.00000000000000000000000000000000030013824367909383240724973039775924987346831190773335270174257280120474975614823581185647299288414075519224186504978181625478529'
+    dx = '1.7e-157'
+
+    colormap = fscolors.cmap_register["valensole"]
+
+    f = fsm.Perturbation_mandelbrot(directory)
+    f.zoom(precision=precision,
+            x=x,
+            y=y,
+            dx=dx,
+            nx=nx,
+            xy_ratio=1.0,
+            theta_deg=0., 
+            projection=fs.projection.Cartesian()
+    )
+
+    f.calc_std_div(
+            calc_name="div",
+            subset=None,
+            max_iter=1000000,
+            M_divergence=1.e3,
+            epsilon_stationnary=1.e-3,
+            BLA_eps=1.e-8,
+            interior_detect=False
+    )
+
+
+    # Plot the image
+    pp = Postproc_batch(f, "div")
+    pp.add_postproc("potential", Continuous_iter_pp())
+    pp.add_postproc("DEM", DEM_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+    
+    plotter = fs.Fractal_plotter(pp, final_render=False, supersampling="2x2")   
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Normal_map_layer("DEM_map", max_slope=35, output=False))
+    plotter.add_layer(Virtual_layer("potential", func=None, output=False))
+    plotter.add_layer(Color_layer(
+            "DEM",
+            func="np.log(x)",
+            colormap=colormap,
+            probes_z=[0., 5.0],
+            output=True
+    ))
+    plotter["DEM"].set_mask(
+            plotter["interior"],
+            mask_color=(0., 0., 0.)
+    )
+    plotter["DEM_map"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+
+
+    # This is where we define the lighting (here 2 light sources)
+    # and apply the shading
+    light = Blinn_lighting(0.35, np.array([1., 1., 1.]))
+    light.add_light_source(
+        k_diffuse=0.0,
+        k_specular=600.,
+        shininess=200.,
+        polar_angle=75.,
+        azimuth_angle=5.,
+        color=np.array([0.9, 0.9, 0.2]))
+    light.add_light_source(
+        k_diffuse=1.9,
+        k_specular=0.,
+        shininess=400.,
+        polar_angle=75.,
+        azimuth_angle=30.,
+        color=np.array([1., 1., 1.]))
+    plotter["DEM"].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/10-double_embedded_julia.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+==============================
+10 - Double embedded Julia set
+==============================
+
+Example plot a double-embedded Julia set in mandelbrot power-2
+
+Embedded Julia sets are structures that occur around certain minibrots.
+When zooming deeper in the fractal, these structures stacks and become
+more and more complex.
+
+
+This example even if not too deep is beyond the separation power of double
+precision data type,
+[#f1]_, at *7e-22*. We will use a `Perturbation_mandelbrot` instance.
+
+Reference:
+`fractalshades.models.Perturbation_mandelbrot`
+
+.. [#f1] **Credit:** Coordinates from Robert P. Munafo website:
+        <https://mrob.com/pub/muency/secondorderembeddedjuliase.html>
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    Fieldlines_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+
+    # A simple showcase using perturbation technique
+    x = "-1.768667862837488812627419470"
+    y = "0.001645580546820209430325900"
+    dx = "12.e-22"
+    precision = 30
+    nx = 2400
+    xy_ratio = 16. / 9.
+
+    calc_name="mandelbrot"
+    
+    cmap_choice = 2
+    if cmap_choice == 1:
+        c3 = np.array([255, 215, 0]) / 255.
+        c0 = np.array([212, 175, 55]) / 255.
+        c1 = c0 * 0.25
+
+        colors = np.vstack((c0[np.newaxis, :],
+                            c1[np.newaxis, :],
+                            c3[np.newaxis, :]))
+        colormap = fscolors.Fractal_colormap(kinds="Lch", colors=colors,
+             grad_npts=200, grad_funcs="x**0.5", extent="mirror")
+    elif cmap_choice == 2:
+        colormap = fscolors.cmap_register["classic"]
+
+    # Run the calculation
+    f = fsm.Perturbation_mandelbrot(plot_dir)
+    f.zoom( precision=precision,
+            x=x,
+            y=y,
+            dx=dx,
+            nx=nx,
+            xy_ratio=xy_ratio,
+            theta_deg=0., 
+            projection="cartesian",
+    )
+
+    f.calc_std_div(
+            calc_name=calc_name,
+            subset=None,
+            max_iter=100000,
+            M_divergence=1.e3,
+            epsilon_stationnary=1.e-3,
+            BLA_eps=1.e-6,
+            interior_detect=False,
+            calc_orbit=True,
+            backshift=4
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+    pp.add_postproc("fieldlines",
+                Fieldlines_pp(n_iter=3, swirl=0., endpoint_k=1.0))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Normal_map_layer("DEM_map", max_slope=35, output=False))
+    plotter.add_layer(Virtual_layer("fieldlines", func=None, output=False))
+    plotter.add_layer(Color_layer(
+            "cont_iter",
+            func="np.log(x)",
+            colormap=colormap,
+            probes_z=[9.015, 9.025],
+            output=True
+    ))
+
+    plotter["cont_iter"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+    plotter["DEM_map"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+
+    # This is the line where we indicate that coloring is a combination of
+    # "Continuous iteration" and "fieldines values"
+    plotter["cont_iter"].set_twin_field(plotter["fieldlines"], 0.0005)
+
+    # This is where we define the lighting (here 2 ccolored light sources)
+    # and apply the shading
+    light = Blinn_lighting(0.4, np.array([1., 1., 1.]))
+    light.add_light_source(
+        k_diffuse=0.2,
+        k_specular=10.,
+        shininess=400.,
+        polar_angle=45.,
+        azimuth_angle=20.,
+        color=np.array([0.9, 0.9, 0.9]))
+    light.add_light_source(
+        k_diffuse=0.8,
+        k_specular=0.,
+        shininess=400.,
+        polar_angle=55.,
+        azimuth_angle=20.,
+        color=np.array([1., 1., 1.]))
+    plotter["cont_iter"].shade(plotter["DEM_map"], light)
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/11-run_perturbdeep.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+=================================
+11- Ultra-deep embedded Julia set
+=================================
+
+This example shows the kind of structure that occur very deep in the Mandelbrot
+set [#f2]_. The width of this image is only *2.e-2608*.
+This is not only below the separation power of double, but the delta are also
+way below the minimal magnitude that can be stored in a double
+(around  1e-323). A ad-hoc dataype is used internally, with and extra integer
+to hold the exponent.
+
+The period of the central minibrot is 2703248 ; the use of chained bivariate
+approximations allows to skip several millions of iterations.
+
+As the running time for this script is close to 15 minutes (10 minutes for the
+reference, 5 minutes for the iterations) it has been pre-computed.
+
+Reference:
+`fractalshades.models.Perturbation_mandelbrot`
+
+.. [#f2] **Credit:** Coordinates courtesy of Microfractal :
+        <https://www.deviantart.com/microfractal/art/Mandelbrot-Deep-Julia-Morphing-22-Golden-Sphere-886123409>
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.settings as fssettings
+
+import fractalshades.models as fsm
+import fractalshades.colors as fscolors
+import fractalshades.projection
+
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    Raw_pp,
+    DEM_normal_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Blinn_lighting,
+    Normal_map_layer,
+)
+
+
+def plot(directory):
+    """
+    Example plot of a very deep location
+    Credit for the coordinates :
+https://www.deviantart.com/microfractal/art/Mandelbrot-Deep-Julia-Morphing-22-Golden-Sphere-886123409
+    """
+    
+    precision = 3520
+    nx = 2400
+    x = '-1.9409989391128007782656638595713128206620929316331395903205283705275932149841553750079140508152501109445961064000387852149507811657094626324996392008081820445955741490587617909708619603737265548027769325647808985287741667276189821676033432683374240723052323372896622554689290278821522432095519048328761094875168059910075072612524746195696519482376711787954155676296696827707057348137590781477540653443160271404114741216279924299516050033371623738987930710049260335938454436747992050897445704854917586460267198917634232454874517524790905068408711299098852857223323363509317448492707948571935557902448516804312250656708860690680767226144394692148838449346680921087412029850014210409147937112323614271639154365986968749816836442985665512979922489943829925482859841402388822224364772960765860128299173467963835512792813373451933644130190266047607001031626499249499592567711348988794983423352102489653363614657987130851011066068082416311059571884201802812522326939248656260215898332770887339844184688424916821959905805787211079924762420560654209080231130357236288188593275206143270109163936044056855567309338390204460230556526667618113052517191169646813610992208066490740332700166077086244561644939752386971282938070707062898838928187674154565542324706485606883204149973662143729325062503353762046809254607154103878222668282005954040495000651634097511941293052468376780564225465557438420172736278899353415715205080501056910932380856513690069593717239355697113322999606963893343303065997244593517188694362601778555657829079220370979486386183376634551544169026880446433151630826730127399985709844229666877539084763034446297595098204169627029966553348731711298433915468877133916519870332995252770006087468201433091412692008675169426600509762262849033820684824479730400854046509072164630272105114166613615665383021053646289448207336461725630828678598527683609575006544933462912457658924436663804582292428129309162915840098216747977268766925226272677267826315722555021136934491464926926641085339160830952887601459585519624489323898936587933143756193630971066578717659019875144049965572880866540996031144922280813352065159362962936897218127976473669535727210317367178865163942427120257230318803642220091013441782124465936161868040076934432584798273802125003893761405910549636791922164569969871504895180875775512279622397659490539731258965222183682582044022842758452337516752189727551206382556078493830490372988205049395299138260871313038171904760429268109644267193074206275040851482988811238053209498575928806745490180665861235757156293268030156174736154214485511919238045324816790747039434094153238651378208655247035749519428374239948111490578363711926298127059816373882058600875440218265729937727712935557101248183859985480838214443248343204994169001603385068217409551664275124868238925925271002064990910751541295196946319404974130124223074815816387748372081603618046256402766723419509314015491326315372861880224396707850752490829513864536227468094212074909783507683557390914984737208904927522859784984066452431380596052384391155762961147112917902257288838205513568126100751182438074841839964967562205987620459771593676482435160564881907643374624834394770129519338651384779340621276744712596399177749754956987947612707663018919330037816063293842647052555147743226921275393227281792532802856285703297338604821969492356674112869979073125870095512233460880231177088317720580337642382172126187069216048936896730950168087435988621276438670059341103609929304930466412268150569753470717829497601938341623581803667066999928999945000062'
+    y = '-0.0006521165369165588520106289441620153907907521525225557951700039268755659160275378414816331241993503713942651869474366440330624054932785747734116130598457275168672169867853790149073948820621927863546898987531675745541556010963860271946131945706089440068213570737152573434606181998626256475661137064241766615685133034114571184540746713081041577482152866404680905298142203271097108866125320734562827910017740404764291477614758081664091324083106696109319507742512146578699926177581123430550120851818916049981949393089874937840577370413575565615246397463453690404270526656455145637869566754373564864548747775061651693403960187403612827482714675143082173905414385810506804378880397100996175280822311114495867725750471436402145707242763362689139153766093202506743259707579782531683072699910204376229255257696447791057044885184061849070063540925613028401048182129422816270970456315092465855569329878796473503666036123284601909076758201573065328180211040459230345709044071756847669905912521106047214804555579992552727318466143562534207465701332898411609149336015158023746864705973770293526683875460324480616782478489019514943512702395590818455582259983339029054638765126731537575594335734368117123722683120375030995584809981966023016675121788001130361752945926045051983789243281329028107416493849599211739205918880442308088915329310667744587253842928202077978689211781621700292204988439971992046135099101850443216579189710924423016693808479474589682525790322932538431715348758724089186172736870724706725359784401019519888555644853285575115223472590818823322033130852641478536530503881747200363162574382337579455223211205019832848615171631087121056343365803496414693646695845027511119821045191586941544022389773784151557473277272394880876628653639136977979073123486169650096416150642999247909147333278062324113459547152270378118487801961875006181455991513879900323624590458328414797373565255061007383050772917420374420930369627261609756033085579925058681478773760867701230719359928389502388023578804808713069253869301107296738982313988108484002367456921622985540672687977893371677916030176767500564905285025226973308704535270965189005321129735333599100313629076978281635241128387571784303118677495016595486491171040002394480779899042204488631259847989603182340726213078367178896618081990169319498713349339065257474424401748553283927933449943175175157120972516636257833849555669271463331231601029167028638597915809746995436188809835668111701784052366810307436108276491541042658178481843136392746657892940367221519240125914939061964441432380740020708127640600546604568699045234845708728863090863984386209155813013615576381026653379878624402126265227089167061378994809588030662831377110537145242600584959148498586439529663105983709419546957848439948376427305067215182145348517650481959560955434577158090652441197554228656503253796471623707876797570793456353888545895776536724341010890647565137237971578364800606022054805371016117249815862385204930532791360055457643453800167233033393824944921504096748637258867979270585206447548364249344195079436376739232814985700753366335710763351616828921383429188346008648781525793755795069682228036514982477038907976343304196109685257025904974333612600761354191140826329760186432247441069680365217200145218033541210372615053282512008534408785235009976598833958899392833195540809260984815364215770028371283427130718815533338521166040923413722562752702386025562655776477893889452984598715385588865771230862335806477085969230662862126372402082027768431991530300520064005268033000000000000000000'
+    dx = '2.e-2608'
+
+    # Set to True if you only want to rerun the post-processing part
+    # even with partially computed tiles
+    fssettings.enable_multithreading = True
+    fs.settings.log_directory = os.path.join(directory, "log")
+    fs.set_log_handlers(verbosity="debug @ console + log")
+    fs.settings.inspect_calc = True
+
+    calc_name="deep"
+    colormap = fscolors.cmap_register["atoll"]
+
+    f = fsm.Perturbation_mandelbrot(directory)
+    f.zoom(
+        precision=precision,
+        x=x,
+        y=y,
+        dx=dx,
+        nx=nx,
+        xy_ratio=16./9.,
+        theta_deg=0., 
+        projection=fs.projection.Cartesian(),
+    )
+
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=10100100,
+        M_divergence=1.e3,
+        epsilon_stationnary=1.e-3,
+        BLA_eps = 1e-6,
+        interior_detect=False
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(
+            pp,
+            final_render=False,
+            supersampling="3x3",
+            jitter=False,
+            recovery_mode=False
+    )
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Normal_map_layer("DEM_map", max_slope=40, output=True))
+    plotter.add_layer(Color_layer(
+            "cont_iter",
+            func="x",
+            colormap=colormap,
+            probes_z= [5392625.725, 5406165.22],
+            output=True
+    ))
+
+    plotter["cont_iter"].set_mask(
+            plotter["interior"],
+            mask_color=(0., 0., 0.)
+    )
+    plotter["DEM_map"].set_mask(
+            plotter["interior"],
+            mask_color=(0., 0., 0.)
+    )
+
+    # This is where we define the lighting (here 2 ccolored light sources)
+    # and apply the shading
+    light = Blinn_lighting(0.5, np.array([1., 1., 1.]))
+    light.add_light_source(
+        k_diffuse=0.2,
+        k_specular=400.,
+        shininess=400.,        
+        polar_angle=60.,
+        azimuth_angle=20.,
+        color=np.array([0.5, 0.5, .4]))
+    light.add_light_source(
+        k_diffuse=2.5,
+        k_specular=0.,
+        shininess=0.,
+        polar_angle=65.,
+        azimuth_angle=30.,
+        color=np.array([1.0, 1.0, 1.0]))
+    plotter["cont_iter"].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+def _plot_from_data(plot_dir):
+    # Private function only used when building fractalshades documentation
+    # This example takes too long too run to autogenerate the image for the
+    # gallery each - so just grabbing the file from the html doc static path
+    import PIL
+
+    data_path = fs.settings.output_context["doc_data_dir"]
+    im = PIL.Image.open(os.path.join(data_path, "gaia.jpg"))
+    rgb_im = im.convert('RGB')
+    tag_dict = {"Software": "fractalshades " + fs.__version__,
+                "example_plot": "gaia"}
+    pnginfo = PIL.PngImagePlugin.PngInfo()
+    for k, v in tag_dict.items():
+        pnginfo.add_text(k, str(v))
+    if fs.settings.output_context["doc"]:
+        fs.settings.add_figure(fs._Pillow_figure(rgb_im, pnginfo))
+    else:
+        # Should not happen
+        raise RuntimeError()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(_plot_from_data, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/12-burning_ship_deep.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+===========================
+12 - Burning Ship deep zoom
+===========================
+
+Example plot of a deep-zoom inside the Burning Ship set (power-2).
+
+Like the Mandelbrot set, this set features "mini-ships", which are
+smaller copies of the whole. The zoom proposed here displays the inner
+decoration around a deep miniship (period 9622, size 3.40e-265).
+
+Reference:
+`fractalshades.models.Perturbation_burning_ship`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+
+    # A simple showcase using perturbation technique
+    x = "-1.996381122925929653294037828311253469966641852551354028279745849996384561656543300231734846372389200884473400326047402259215365299651000049307967220797174220920308250039037884064184875313550754352410343246674089430454249309097057276774162871180276065193880170743903875782"
+    y = "0.000004763303728392770746014692362029865866711691612095974571331721507794709607604050981467065736920676037481378828276642944072069756835182953451109905077881061139887661561617020726899218853890425452233104923366681895875677542245236396274857406762304353824848557938906613374564"
+    dx = "1.207782640899473e-261"
+    precision = 271
+    nx = 2400
+    xy_ratio = 1.8
+    
+    # As this formula is non-analytic, we will 'unskew' based on the 
+    # influencing miniship "size estimate" matrix.
+    has_skew = True
+    skew_00 = 0.659275816850581
+    skew_01 = -0.5484220094485625
+    skew_10 = 0.25710339801865756
+    skew_11 = 1.3029430412388974
+
+    calc_name="Burning_ship"
+    colormap = fscolors.cmap_register["peacock"]
+    colormap.clip = "repeat"
+
+    # Run the calculation
+    f = fsm.Perturbation_burning_ship(plot_dir)
+
+    f.zoom(
+        precision=precision,
+        x=x,
+        y=y,
+        dx=dx,
+        nx=nx,
+        xy_ratio=xy_ratio,
+        theta_deg=0., 
+        projection="cartesian",
+        has_skew=has_skew,
+        skew_00=skew_00,
+        skew_01=skew_01,
+        skew_10=skew_10,
+        skew_11=skew_11
+    )
+
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=150000,
+        M_divergence=1.e3,
+        BLA_eps= 1.e-6,
+        calc_hessian=True
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("cont_iter", Continuous_iter_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Normal_map_layer("DEM_map", max_slope=40, output=False))
+    plotter.add_layer(Color_layer(
+            "cont_iter",
+            func=lambda x: np.log(x),
+            colormap=colormap,
+            probes_z=[10.975318, 10.977222],
+            output=True
+    ))
+
+    plotter["cont_iter"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+    plotter["DEM_map"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+
+    # This is where we define the lighting (here 2 ccolored light sources)
+    # and apply the shading
+    light = Blinn_lighting(0.4, np.array([1., 1., 1.]))
+    light.add_light_source(
+        k_diffuse=0.2,
+        k_specular=30.,
+        shininess=400.,
+        polar_angle=0.,
+        azimuth_angle=10.,
+        color=np.array([1.0, 1.0, 0.95]))
+    light.add_light_source(
+        k_diffuse=0.8,
+        k_specular=0.,
+        shininess=400.,
+        polar_angle=0.,
+        azimuth_angle=10.,
+        color=np.array([1., 1., 1.]))
+    plotter["cont_iter"].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/13-burning_ship.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+=====================
+13 - Burning ship DEM
+=====================
+
+Plotting of a distance estimation for the Burning ship (power-2).
+This zoom is on the structure which gave the fractal its name. We use an
+arbitrary-precision model, even if this is obviously not needed here.
+
+Reference:
+`fractalshades.models.Perturbation_burning_ship`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+
+    # A simple showcase using perturbation technique
+    x = '-1.7579317963'
+    y = '0.052705991307'
+    dx = '0.181287312180757'
+    precision = 30
+    nx = 2400
+    xy_ratio = 1.0
+    
+    sign = 1.0
+    DEM_min = 1.e-4
+    zmin = -9.21034049987793
+    zmax = -0.3999025523662567
+    
+    # As this formula is non-analytic, we will 'unskew' based on the 
+    # influencing miniship "size estimate" matrix.
+    has_skew = False
+    skew_00 = 1.0
+    skew_01 = 0.0
+    skew_10 = -0.1
+    skew_11 = 1.1
+
+    calc_name="Burning_ship"
+    colormap = fscolors.cmap_register["classic"]
+
+    # Run the calculation
+    f = fsm.Perturbation_burning_ship(plot_dir)
+
+    f.zoom(
+        precision=precision,
+        x=x,
+        y=y,
+        dx=dx,
+        nx=nx,
+        xy_ratio=xy_ratio,
+        theta_deg=0., 
+        projection="cartesian",
+        has_skew=has_skew,
+        skew_00=skew_00,
+        skew_01=skew_01,
+        skew_10=skew_10,
+        skew_11=skew_11
+    )
+
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=1500,
+        M_divergence=1.e3,
+        BLA_eps= 1.e-6,
+    )
+
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("continuous_iter", Continuous_iter_pp())
+    pp.add_postproc("distance_estimation", DEM_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Normal_map_layer("DEM_map", max_slope=30, output=False))
+    plotter.add_layer(
+        Virtual_layer("continuous_iter", func=None, output=False)
+    )
+    
+    cmap_func = lambda x: sign * np.where(
+       np.isinf(x),
+       np.log(DEM_min),
+       np.log(np.clip(x, DEM_min, None))
+    )
+    plotter.add_layer(Color_layer(
+            "distance_estimation",
+            func=cmap_func,
+            colormap=colormap,
+            probes_z=[zmin, zmax],
+            output=True
+    ))
+
+    plotter["distance_estimation"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+    plotter["DEM_map"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+
+    # This is where we define the lighting (here 2 ccolored light sources)
+    # and apply the shading
+    light = Blinn_lighting(0.4, np.array([1., 1., 1.]))
+    light.add_light_source(
+        k_diffuse=0.2,
+        k_specular=300.,
+        shininess=1400.,
+        polar_angle=45.,
+        azimuth_angle=10.,
+        color=np.array([1.0, 1.0, 0.98]))
+    light.add_light_source(
+        k_diffuse=0.8,
+        k_specular=2.,
+        shininess=400.,
+        polar_angle=45.,
+        azimuth_angle=10.,
+        color=np.array([1., 1., 1.]))
+    plotter["distance_estimation"].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/14-burning_ship-deeper_DEM.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+============================
+14 - Burning ship deeper DEM
+============================
+
+Plotting of a distance estimation for the Burning ship (power-2).
+This zoom is deeper, featuring a miniship at 1.e-101
+
+Reference:
+`fractalshades.models.Perturbation_burning_ship`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.projection
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+    fs.settings.log_directory = os.path.join(plot_dir, "log")
+    fs.set_log_handlers(verbosity="debug @ console + log")
+
+    # A simple showcase using perturbation technique
+    x = '0.533551593577038561769721161491702555962775680136595415306315189524970818968817900068355227861158570104764433694'
+    y = '1.26175074578870311547721223871955368990255513054155186351034363459852900933566891849764050954410207620093433856'
+    dx = '7.072814368784043e-101'
+    precision = 150
+    nx = 2400
+    xy_ratio = 1.8
+    
+    sign = 1.0
+    DEM_min = 5.e-5
+    zmin = -9.903487205505371
+    zmax = -4.948512077331543
+    
+    # As this formula is non-analytic, we will 'unskew' based on the 
+    # influencing miniship "size estimate" matrix.
+    has_skew = True
+    skew_00 = 1.3141410612942215
+    skew_01 = 0.8651590600810832
+    skew_10 = 0.6372176654581702
+    skew_11 = 1.1804627997751416
+
+    calc_name="Burning_ship"
+    colormap = fscolors.cmap_register["dawn"]
+
+    # Run the calculation
+    f = fsm.Perturbation_burning_ship(plot_dir)
+
+    f.zoom(
+        precision=precision,
+        x=x,
+        y=y,
+        dx=dx,
+        nx=nx,
+        xy_ratio=xy_ratio,
+        theta_deg=-2., 
+        projection=fs.projection.Cartesian(),
+        has_skew=has_skew,
+        skew_00=skew_00,
+        skew_01=skew_01,
+        skew_10=skew_10,
+        skew_11=skew_11
+    )
+
+    f.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=50000,
+        M_divergence=1.e3,
+        BLA_eps=1.e-6,
+    )
+
+    # Plot the image
+    pp = Postproc_batch(f, calc_name)
+    pp.add_postproc("continuous_iter", Continuous_iter_pp())
+    pp.add_postproc("distance_estimation", DEM_pp())
+    pp.add_postproc("interior", Raw_pp("stop_reason", func="x != 1."))
+    pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+    plotter.add_layer(Normal_map_layer("DEM_map", max_slope=35, output=False))
+    plotter.add_layer(
+        Virtual_layer("continuous_iter", func=None, output=False)
+    )
+    
+    cmap_func = lambda x: sign * np.where(
+       np.isinf(x),
+       np.log(DEM_min),
+       np.log(np.clip(x, DEM_min, None))
+    )
+    plotter.add_layer(Color_layer(
+            "distance_estimation",
+            func=cmap_func,
+            colormap=colormap,
+            probes_z=[zmin, zmax],
+            output=True
+    ))
+
+    plotter["distance_estimation"].set_mask(plotter["interior"],
+           mask_color=(0.0, 0.22745098173618317, 0.9803921580314636))
+    plotter["DEM_map"].set_mask(plotter["interior"], mask_color=(0., 0., 0.))
+
+    # define the lighting and apply the shading
+    light = Blinn_lighting(0.3, np.array([1., 1., 1.]))
+    light.add_light_source(
+        k_diffuse=0.4,
+        k_specular=4.,
+        shininess=300.,
+        polar_angle=45.,
+        azimuth_angle=20.,
+        color=np.array([1.0, 1.0, 0.96]))
+
+    plotter["distance_estimation"].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/15-burning_ship-deepJulia_DEM.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+===============================================
+15 - Burning Ship ultra-deep embedded Julia set
+===============================================
+
+A quite deep structure (embedded Julia set) in the Burning Ship fractal,
+the total width of this image is 1.144e-2430
+
+Note: this image has been precomputed, expect ~ 15 minutes running time
+
+Reference:
+`fractalshades.models.Perturbation_burning_ship`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.projection
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+    fs.settings.log_directory = os.path.join(plot_dir, "log")
+    fs.set_log_handlers(verbosity="debug @ console + log")
+
+    # A simple showcase using perturbation technique
+    calc_name = 'test'
+
+    # _1 = 'Zoom parameters'
+    x = '0.9701936652696929025320753291021640069692654539316192998690923109401640867955993661348402555113639551710389101266542415971713942486853216393813649162979072547802417224340652323262349158389334222627811644016253597391910029659316357301998127587222911117068692937332263734688107162276430725865891377027713219435118320751548351664213810242465280926268914698425230524658130684070344443995452567778895673305004993390817273703571507825574829894122869598971957471705903352258502762254515515294361066180146074561032643573598722222040496154173393661429490397936640507771227517101854622975574415244458931292699949722160346459208442222961574753315177077539276852355729273319726015475770381618494157179214482373568782661649893310709907661731283117496242239709610429793578072391266559685331120528561114267437654526716995553024543729650536697559791250379020754250672903734923573448717942943970298095818493434609616937968121189348915555572214918303889546231350020628286397997223715011412261542650692454110755809628279239489879585268252621147649793481723065430907267117608758281779102978838648576921218120920962002264825015745588106847913525492946452254310787172486775814422122258092027377707108268191120425919419124835292966550576001399275366568807963389218809780107599068214155523579653859084541530366841366189505107906987430630242953271455020116151957081318685880252401380281985572955696248793398164635626713220524430572775261137001148028279576668450581561222782481785001043128664688763378893104772392955185000696803820972737541438683344039638953094260285865657085589180182401507503580004384560540383870385355241193112481290785723047285697605254733548290893942245092627651651597869625383903066457022608922389414718924539227224855002012100422058545400484296629494939495311402675752380033879258498963813054249403893785636202594225524125444879526890786429302509808140838804324205049577779873109362536111588098204163722382772040534826219430414203370606339177481259221710436256127718568043922242263455585216900496206889267264670797765613503122865835068501053587942697743829310740221948451782496228263890214297763849890218437752497232935905539132371858453304851040938800309404157353512244520248353104991665694075780295836215561681922849217489246497234914909661588296261737678281244380882132424479613283511058520818429539788070014640299439958887553486018555428170031502849984538414538283716997058565931477170027800285363915713662125726473190638471805030561786691988766585905120420802671798950748153123632932101839271798463486809455980364923603860241993173947540920871574857984475500033900285891572051331980943433866207740473090255765926025362244986669503742755255761071007380522591713350354372923905266136798183026883477060543423404255409949958510710181465068796856775021564289722894075691901606980839573089380439646179897286950602737725518737743149383048757676902746131152858587997308837198280957610490765294039265796120872204840688751047818805426697896004881996087794134834541904986316576382567945932525117723689238841232653703186017752082678551709427045117285741568408159980026266607206821702028484285572261067135817176650277663048832133374499193757209012687308740638703942796829031242634716670534811758112294940705163198806862045641853768128528678129943319108514352726869421618074581679561487179583752574084012257968149086118827963632934540281637162816796623971374068354964049687564272665939022313134943833032930081817808816571149205341253749932571363250600539008902957944594882185436888415938849376528050163050589699932677908593044670740671118471172091408961371322320178653168964106320028728910603405461496016941884816463351862600385376307271678607452228129723654598643285656270293178616716'
+    y = '1.21850295274166974285702071299767293230448362783030256370418850426357812057287765795952909924874314330508539969297886115274649834200989268894208451239482225013300749456502263345911904061918405882267247319640688051306115980517738668779489717879501797247258224809897775280770852170258524412633558130505883724476866966985508458485919142819601329989687383448811037328082711721161470690121878493198046358751839236149434681950533255245187053933483778601504447950294838247845161783672811219834764478385186536497269842475968078558031675762083791360425745174704632874233983998182892145684751326328477083040861737509281015468411385389799984042475645628283558816947511162507651187667952040913572385278651100236121151887105253470185386674667986900188832059392352799856055322950729537375843901237399061284500643278779523591449616710476752264936216345806658043344658616643340678735739519525433264767270027061430543843257187353877029555551270526391938747214615199439858552596337543726651722260002339052840165118128842461581572996436079005195568395312763188058724140996816691570490056140831878429089047778661296784385866528334486352645873846613947046435483002278866092987724375382417893268993996789745199683180023050054757812070654246649162524801382131688052955724944350764117640869637378117002796335124733411885369789817724803637992093699164231716264219807491466334675822160875747737352771836575692415983039374841213730639072517022935737002367376076782877752872774682695937987247835325076927546214877546749292729514915230666466612076502052209867773261393221279506334633925663482220243233759618731656757054526390951602593781676864648757161654591629775803477145807128633219340498634238071474286810481780127174598323843130633698185793350985264024244567565795200632993437302853950640720883008215879846772012565283775155209563908664290135152767807758384559765858961368461418697755588559361261559562547843420334889254205200542988951775379745070583888281723802233108308868335894104909439497685122828086115731663784771973213827612717787290171980623596746423267019501342758440202781865794668524662923516285704981397241611769293891860366514881989109998519017268978043590088138050508291854806906653036530251655628823119136269919660938345363340977528809686088471594328564773430014726859926884866091693053008667768667029710137521480096382432397345027289209805594561724116020130359822106694866563748366420873505724341857417166911438588629601764796166018056925106978740196193095511282645002632228924471792762377886653689070196075349430503711630195354583316883889332315550229961337944948802122535673559333485491168799073112748947303702398815365012235238849818042795200722778163065197570883655006796896547740657554368285328326518332339955921813615404845789583995754872948257000357280954452059089713452964552785619609694617590918835906422081541806668445769065304518054867016814502798798621371847122830515827824438021537601537901219394409297530315316238367106391847669718306661263047179405151161522520089272227345915855310745096068187870411949867267316670474925303842274582605243780765146300670901447071096148484224309570783489169499114398205981269517513504046673637695036470030628820443783471508541712256435283497244102888248732917144073469861996130039426950206864949867081828449123019760537449171909445930798337532184341249212812130202805258780206286589086100632687788279327472327605560361209394561537188797717261975365462204634477350129833000259344100759147984232983575585494791630753243440990975272411206618343610080071104037572887403807774237628513657204466949750585208693693049703385359689453648379702904870898075750613735069421419461158987725465408508371921319695407192650925958187051991698058761098'
+    dx = '1.14487966e-2430'
+
+    xy_ratio = 1.8
+    theta_deg = 12.0
+    dps = 2440
+    nx = 2400
+
+    # _1b = 'Skew parameters /!\\ Re-run when modified!'
+    has_skew = True
+    skew_00 = 0.7270379024905976
+    skew_01 = 0.46070490548507187
+    skew_10 = 0.23453177132939212
+    skew_11 = 1.524060759071476
+
+    # _2 = 'Calculation parameters'
+    max_iter = 500000
+
+    # _3 = 'Bilinear series parameters'
+    eps = 1e-06
+
+    # _4 = 'Plotting parameters: base field'
+    base_layer = 'distance_estimation'
+    interior_color = (0.1, 0.1, 0.1)
+    colormap = fscolors.cmap_register["classic"]
+    invert_cmap = True
+    DEM_min = 1e-04
+    zmin = 4.815852642059326 - 0.25 * (9.21034049987793 - 4.815852642059326)
+    zmax = 4.815852642059326 + 0.25 * (9.21034049987793 - 4.815852642059326)
+
+    # _5 = 'Plotting parameters: shading'
+    shade_kind = 'glossy'
+    gloss_intensity = 30.0
+    light_angle_deg = 45.0
+    light_color = (1.0, 1.0, 1.0)
+    gloss_light_color = (1.0, 1.0, 0.7450980544090271)
+
+    # Run the calculation
+    fractal = fsm.Perturbation_burning_ship(plot_dir)
+    # f.clean_up()
+
+    fractal.zoom(precision=dps, x=x, y=y, dx=dx, nx=nx, xy_ratio=xy_ratio,
+                 theta_deg=theta_deg, projection=fs.projection.Cartesian(),
+                 has_skew=has_skew, skew_00=skew_00, skew_01=skew_01,
+                 skew_10=skew_10, skew_11=skew_11
+            )
+
+    fractal.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=max_iter,
+        M_divergence=1.e3,
+        BLA_eps=eps,
+    )
+
+
+    pp = Postproc_batch(fractal, calc_name)
+    
+    if base_layer == "continuous_iter":
+        pp.add_postproc(base_layer, Continuous_iter_pp())
+    elif base_layer == "distance_estimation":
+        pp.add_postproc("continuous_iter", Continuous_iter_pp())
+        pp.add_postproc(base_layer, DEM_pp())
+
+    pp.add_postproc("interior", Raw_pp("stop_reason",
+                    func=lambda x: x != 1))
+    if shade_kind != "None":
+        pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+
+    if shade_kind != "None":
+        plotter.add_layer(Normal_map_layer(
+            "DEM_map", max_slope=60, output=True
+        ))
+
+    if base_layer != 'continuous_iter':
+        plotter.add_layer(
+            Virtual_layer("continuous_iter", func=None, output=False)
+        )
+
+    sign = {False: 1., True: -1.}[invert_cmap]
+    if base_layer == 'distance_estimation':
+        cmap_func = lambda x: sign * np.where(
+           np.isinf(x),
+           np.log(DEM_min),
+           np.log(np.clip(x, DEM_min, None))
+        )
+    else:
+        cmap_func = lambda x: sign * np.log(x)
+
+    plotter.add_layer(Color_layer(
+            base_layer,
+            func=cmap_func,
+            colormap=colormap,
+            probes_z=[zmin, zmax],
+            output=True))
+    plotter[base_layer].set_mask(
+        plotter["interior"], mask_color=interior_color
+    )
+    if shade_kind != "None":
+        light = Blinn_lighting(0.4, np.array([1., 1., 1.]))
+        light.add_light_source(
+            k_diffuse=0.8,
+            k_specular=.0,
+            shininess=350.,
+            polar_angle=light_angle_deg,
+            azimuth_angle=10.,
+            color=np.array(light_color))
+
+        if shade_kind == "glossy":
+            light.add_light_source(
+                k_diffuse=0.2,
+                k_specular=gloss_intensity,
+                shininess=400.,
+                polar_angle=light_angle_deg,
+                azimuth_angle=10.,
+                color=np.array(gloss_light_color))
+
+        plotter[base_layer].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+
+def _plot_from_data(plot_dir):
+    # Private function only used when building fractalshades documentation
+    # This example takes too long too run to autogenerate the image for the
+    # gallery each - so just grabbing the file from the html doc static path
+    import PIL
+
+    data_path = fs.settings.output_context["doc_data_dir"]
+    im = PIL.Image.open(os.path.join(data_path, "deep_julia_BS.jpg"))
+    rgb_im = im.convert('RGB')
+    tag_dict = {"Software": "fractalshades " + fs.__version__,
+                "example_plot": "tetration_spring"}
+    pnginfo = PIL.PngImagePlugin.PngInfo()
+    for k, v in tag_dict.items():
+        pnginfo.add_text(k, str(v))
+    if fs.settings.output_context["doc"]:
+        fs.settings.add_figure(fs._Pillow_figure(rgb_im, pnginfo))
+    else:
+        # Should not happen
+        raise RuntimeError()
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(_plot_from_data, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/16-tetration_spring.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+===========================================
+16 - Tetration (power tower) zoom: "Spring"
+===========================================
+
+Coloring based on attracting cycle order and attractivity.
+This zoom is quite shallow however already features complex structures
+
+Note: due to the long running time and high antialising needed, this image
+has been precomputed.
+
+Reference:
+`fractalshades.models.Power_tower`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Virtual_layer,
+)
+
+
+
+def plot(plot_dir):
+
+    fractal = fsm.Power_tower(plot_dir)
+    calc_name = 'test'
+
+    x = 1.4073514628685297
+    y = -3.362771439936941
+    dx = 0.0005297704717647524
+    xy_ratio = 1.8
+    theta_deg = 135.0
+
+    nx = 800
+    compute_order = True
+    max_order = 10000
+    eps_newton_cv = 1e-12
+
+    interior_color = (
+        0.40784314274787903,
+        0.5882353186607361,
+        0.2823529541492462
+    )
+    colormap = colormap = fscolors.cmap_register["lily"]
+    zmin = 0.9 * 1.0376274585723877 + 0.1 * 1.2009856700897217
+    zmax = 0.3 * 1.0376274585723877 + 0.7 * 1.2009856700897217
+
+
+    fractal.zoom(x=x, y=y, dx=dx, nx=nx, xy_ratio=xy_ratio,
+         theta_deg=theta_deg, projection="cartesian")
+
+    fractal.newton_calc(
+        calc_name=calc_name,
+        subset=None,
+        compute_order=compute_order,
+        max_order=max_order,
+        max_newton=20,
+        eps_newton_cv=eps_newton_cv
+    )
+
+
+    layer_name = "cycle_order"
+
+    pp = Postproc_batch(fractal, calc_name)
+    pp.add_postproc(layer_name, Raw_pp("order"))
+    pp.add_postproc("attr", Raw_pp("dzrdz", func=lambda x: np.abs(x)))
+    pp.add_postproc("interior", Raw_pp("stop_reason",
+                    func=lambda x: x != 1)
+    )
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+
+    plotter.add_layer(Color_layer(
+            layer_name,
+            func=lambda x: np.log(np.log(np.log(x + 1.) + 1.) + 1.),
+            colormap=colormap,
+            probes_z=[zmin, zmax],
+            output=True))
+    plotter[layer_name].set_mask(plotter["interior"],
+                                 mask_color=interior_color)
+    plotter.add_layer(Virtual_layer("attr", func=None, output=False))
+    
+    plotter[layer_name].set_twin_field(plotter["attr"], 0.3)
+
+    plotter.plot()
+    
+    # Renaming output to match expected from the Fractal GUI
+    layer = plotter[layer_name]
+    file_name = "{}_{}".format(type(layer).__name__, layer.postname)
+    src_path = os.path.join(fractal.directory, file_name + ".png")
+    dest_path = os.path.join(fractal.directory, calc_name + ".png")
+    if os.path.isfile(dest_path):
+        os.unlink(dest_path)
+    os.link(src_path, dest_path) 
+
+
+def _plot_from_data(plot_dir):
+    # Private function only used when building fractalshades documentation
+    # This example takes too long too run to autogenerate the image for the
+    # gallery each - so just grabbing the file from the html doc static path
+    import PIL
+
+    data_path = fs.settings.output_context["doc_data_dir"]
+    im = PIL.Image.open(os.path.join(data_path, "tetration_spring.jpg"))
+    rgb_im = im.convert('RGB')
+    tag_dict = {"Software": "fractalshades " + fs.__version__,
+                "example_plot": "tetration_spring"}
+    pnginfo = PIL.PngImagePlugin.PngInfo()
+    for k, v in tag_dict.items():
+        pnginfo.add_text(k, str(v))
+    if fs.settings.output_context["doc"]:
+        fs.settings.add_figure(fs._Pillow_figure(rgb_im, pnginfo))
+    else:
+        # Should not happen
+        raise RuntimeError()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(_plot_from_data, plot_dir)
+
+
+================================================
+FILE: examples/batch_mode/17-perpendicular_burning_ship_DEM.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+=================================
+17 - "Perpendicular" Burning Ship 
+=================================
+
+This variant of the Burning Ship is interesting for the variety of its shapes.
+Here some decoration around a deep mini, at a depth of 1.8e-128
+
+Reference:
+`fractalshades.models.Perturbation_perpendicular_burning_ship`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+
+    # A simple showcase using perturbation technique
+    calc_name = 'test'
+
+    # _1 = 'Zoom parameters'
+    x = '0.99933368699185373639022706206725770981715223678700982012404710427171219409317906966176602615220191953222863056569706047389033861855088978962654736627779241722367794435564687067'
+    y = '0.996457170505254265452116588481786614441676204699082859164552562590920318860452552741252698252881096523313551079924623070901888949263620321040269806468649035399547439554888846827'
+    dx = '1.89491419e-128'
+    xy_ratio = 1.8
+    theta_deg = -35
+    dps = 140
+    nx = 2400
+
+    # _1b = 'Skew parameters /!\\ Re-run when modified!'
+    has_skew = True
+    skew_00 = 0.9393449132343535
+    skew_01 = 0.34255954266629574
+    skew_10 = 0.6121690906221282
+    skew_11 = 1.287817016597985
+
+    # _2 = 'Calculation parameters'
+    max_iter = 500000
+
+    # _3 = 'Bilinear series parameters'
+    eps = 1e-06
+
+    # _4 = 'Plotting parameters: base field'
+    base_layer = 'distance_estimation'
+    interior_color = (0.6627451181411743, 0.4313725531101227, 0.0)
+    colormap = fscolors.cmap_register["classic"]
+    invert_cmap = False
+    DEM_min = 1e-04
+    zmin = -9.21034049987793
+    zmax = 0.4 * (-9.21034049987793) + 0.6 * (-4.388575077056885)
+
+    # _5 = 'Plotting parameters: shading'
+    shade_kind = 'glossy'
+    gloss_intensity = 100.0
+    light_angle_deg = 35.0
+    light_color = (1.0, 1.0, 1.0)
+    gloss_light_color = (1.0, 1.0, 1.0)
+
+    # Run the calculation
+    fractal = fsm.Perturbation_burning_ship(
+            plot_dir,
+            flavor="Perpendicular burning ship"
+    )
+
+    fractal.zoom(precision=dps, x=x, y=y, dx=dx, nx=nx, xy_ratio=xy_ratio,
+                 theta_deg=theta_deg, projection="cartesian",
+                 has_skew=has_skew, skew_00=skew_00, skew_01=skew_01,
+                 skew_10=skew_10, skew_11=skew_11
+            )
+
+    fractal.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=max_iter,
+        M_divergence=1.e3,
+        BLA_eps=eps,
+    )
+
+    pp = Postproc_batch(fractal, calc_name)
+    
+    if base_layer == "continuous_iter":
+        pp.add_postproc(base_layer, Continuous_iter_pp())
+    elif base_layer == "distance_estimation":
+        pp.add_postproc("continuous_iter", Continuous_iter_pp())
+        pp.add_postproc(base_layer, DEM_pp())
+
+    pp.add_postproc("interior", Raw_pp("stop_reason",
+                    func=lambda x: x != 1))
+    if shade_kind != "None":
+        pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+
+    if shade_kind != "None":
+        plotter.add_layer(Normal_map_layer(
+            "DEM_map", max_slope=60, output=False
+        ))
+
+    if base_layer != 'continuous_iter':
+        plotter.add_layer(
+            Virtual_layer("continuous_iter", func=None, output=False)
+        )
+
+    sign = {False: 1., True: -1.}[invert_cmap]
+    if base_layer == 'distance_estimation':
+        cmap_func = lambda x: sign * np.where(
+           np.isinf(x),
+           np.log(DEM_min),
+           np.log(np.clip(x, DEM_min, None))
+        )
+    else:
+        cmap_func = lambda x: sign * np.log(x)
+
+    plotter.add_layer(Color_layer(
+            base_layer,
+            func=cmap_func,
+            colormap=colormap,
+            probes_z=[zmin, zmax],
+            output=True))
+    plotter[base_layer].set_mask(
+        plotter["interior"], mask_color=interior_color
+    )
+    if shade_kind != "None":
+        light = Blinn_lighting(0.6, np.array([1., 1., 1.]))
+        light.add_light_source(
+            k_diffuse=0.8,
+            k_specular=.0,
+            shininess=350.,
+            polar_angle=light_angle_deg,
+            azimuth_angle=10.,
+            color=np.array(light_color))
+
+        if shade_kind == "glossy":
+            light.add_light_source(
+                k_diffuse=0.2,
+                k_specular=gloss_intensity,
+                shininess=400.,
+                polar_angle=light_angle_deg,
+                azimuth_angle=10.,
+                color=np.array(gloss_light_color))
+
+        plotter[base_layer].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/18-perpendicular_burning_ship_glynn.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+======================================================
+18 - "Perpendicular" Burning Ship: hidden Glynn spiral
+======================================================
+
+An example of hidden feature in this fractal:
+a Glynn spiral in a very skewed area at a depth of 4.e-40.
+
+Reference:
+`fractalshades.models.Perturbation_perpendicular_burning_ship`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+
+    # A simple showcase using perturbation technique
+    calc_name = 'test'
+
+    # _1 = 'Zoom parameters'
+    x = '-1.6221172452279831275586824847368230989301274844265'
+    y = '-0.0043849065564689427951877101597546609652950526531633'
+    dx = '4.646303299697506e-40'
+    xy_ratio = 1.8
+    theta_deg = -2
+    dps = 55
+    nx = 2400
+
+    # _1b = 'Skew parameters /!\\ Re-run when modified!'
+    has_skew = True
+    skew_00 = 1.011753723519244
+    skew_01 = -1.157539989768796
+    skew_10 = -0.5299787188179303
+    skew_11 = 1.5947275737676074
+
+    # _2 = 'Calculation parameters'
+    max_iter = 20000
+
+    # _3 = 'Bilinear series parameters'
+    eps = 1e-06
+
+    # _4 = 'Plotting parameters: base field'
+    base_layer = 'distance_estimation'
+    interior_color = (0.6627451181411743, 0.4313725531101227, 0.0)
+    colormap = fscolors.Fractal_colormap(
+        colors=[
+            [1.        , 1.        , 0.        ],
+            [0.05098039, 0.03921569, 0.3137255 ],
+            [0.10588235, 0.78039217, 0.78039217],
+            [0.33333334, 1.        , 1.        ]
+        ],
+        kinds=['Lch', 'Lch', 'Lch', 'Lch'],
+        grad_npts=[ 3,  3, 32, 32],
+        grad_funcs=['x', 'x**2', 'x', 'x'],
+        extent='mirror'
+    )
+    invert_cmap = True
+    DEM_min = 1e-08
+    zmin = 6.540582180023193
+    zmax = 18.42068099975586 * 1.1 - 6.540582180023193 * 0.1
+
+    # _5 = 'Plotting parameters: shading'
+    shade_kind = 'glossy'
+    gloss_intensity = 100.0
+    light_angle_deg = 35.0
+    light_color = (1.0, 1.0, 1.0)
+    gloss_light_color = (1.0, 1.0, 1.0)
+
+    # Run the calculation
+    fractal = fsm.Perturbation_burning_ship(
+            plot_dir,
+            flavor="Perpendicular burning ship"
+    )
+
+    fractal.zoom(precision=dps, x=x, y=y, dx=dx, nx=nx, xy_ratio=xy_ratio,
+                 theta_deg=theta_deg, projection="cartesian",
+                 has_skew=has_skew, skew_00=skew_00, skew_01=skew_01,
+                 skew_10=skew_10, skew_11=skew_11
+            )
+
+    fractal.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=max_iter,
+        M_divergence=1.e3,
+        BLA_eps=eps,
+    )
+
+    pp = Postproc_batch(fractal, calc_name)
+    
+    if base_layer == "continuous_iter":
+        pp.add_postproc(base_layer, Continuous_iter_pp())
+    elif base_layer == "distance_estimation":
+        pp.add_postproc("continuous_iter", Continuous_iter_pp())
+        pp.add_postproc(base_layer, DEM_pp())
+
+    pp.add_postproc("interior", Raw_pp("stop_reason",
+                    func=lambda x: x != 1))
+    if shade_kind != "None":
+        pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+
+    if shade_kind != "None":
+        plotter.add_layer(Normal_map_layer(
+            "DEM_map", max_slope=40, output=False
+        ))
+
+    if base_layer != 'continuous_iter':
+        plotter.add_layer(
+            Virtual_layer("continuous_iter", func=None, output=False)
+        )
+
+    sign = {False: 1., True: -1.}[invert_cmap]
+    if base_layer == 'distance_estimation':
+        cmap_func = lambda x: sign * np.where(
+           np.isinf(x),
+           np.log(DEM_min),
+           np.log(np.clip(x, DEM_min, None))
+        )
+    else:
+        cmap_func = lambda x: sign * np.log(x)
+
+    plotter.add_layer(Color_layer(
+            base_layer,
+            func=cmap_func,
+            colormap=colormap,
+            probes_z=[zmin, zmax],
+            output=True))
+    plotter[base_layer].set_mask(
+        plotter["interior"], mask_color=interior_color
+    )
+    if shade_kind != "None":
+        light = Blinn_lighting(0.6, np.array([1., 1., 1.]))
+        light.add_light_source(
+            k_diffuse=0.8,
+            k_specular=.0,
+            shininess=350.,
+            polar_angle=light_angle_deg,
+            azimuth_angle=10.,
+            color=np.array(light_color))
+
+        if shade_kind == "glossy":
+            light.add_light_source(
+                k_diffuse=0.2,
+                k_specular=gloss_intensity,
+                shininess=400.,
+                polar_angle=light_angle_deg,
+                azimuth_angle=10.,
+                color=np.array(gloss_light_color))
+
+        plotter[base_layer].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/19-perpendicular_burning_ship_Koch.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+=========================================================
+19 - "Perpendicular" Burning Ship: hidden Koch snowflakes
+=========================================================
+
+Another hidden feature in this fractal: here, a reminiscence of Koch snowflakes
+close to a mini at a depth of 1.e-53.
+
+Reference:
+`fractalshades.models.Perturbation_perpendicular_burning_ship`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+
+    # A simple showcase using perturbation technique
+    calc_name = 'test'
+
+    # _1 = 'Zoom parameters'
+    x = '-1.47214775731981401403314210855688086942157169819838263666455234'
+    y = '-0.000000821699995458791163928571540134217349033686644929036252293894057'
+    dx = '1.00371044925664e-53'
+    theta_deg = 90.0
+    xy_ratio = 1.8
+    dps = 60
+    nx = 2400
+
+    # _1b = 'Skew parameters /!\\ Re-run when modified!'
+    has_skew = True
+    skew_00 = 0.13539222675927937
+    skew_01 = 0.8700072011411545
+    skew_10 = -1.153798854345238
+    skew_11 = -0.028164925269682
+
+    # _2 = 'Calculation parameters'
+    max_iter = 20000
+
+    # _3 = 'Bilinear series parameters'
+    eps = 1e-06
+
+    # _4 = 'Plotting parameters: base field'
+    base_layer = 'distance_estimation'
+    interior_color = (0.6627451181411743, 0.4313725531101227, 0.0)
+    colormap = fscolors.Fractal_colormap(
+        colors=[
+            [0.        , 0.02745098, 0.39215686],
+            [1.        , 1.        , 0.37254903]
+        ],
+        kinds=['Lch'],
+        grad_npts=[40],
+        grad_funcs=['1-(1-x)**2'],
+        extent='repeat'
+    )
+    invert_cmap = False
+    DEM_min = 1e-07
+    zmin = -16.11809539794922
+    zmax = -6.8490519523620605
+
+    # _5 = 'Plotting parameters: shading'
+    shade_kind = 'glossy'
+    gloss_intensity = 100.0
+    light_angle_deg = 35.0
+    light_color = (1.0, 1.0, 1.0)
+    gloss_light_color = (1.0, 1.0, 1.0)
+
+    # Run the calculation
+    fractal = fsm.Perturbation_burning_ship(
+            plot_dir,
+            flavor="Perpendicular burning ship"
+    )
+
+
+    fractal.zoom(precision=dps, x=x, y=y, dx=dx, nx=nx, xy_ratio=xy_ratio,
+                 theta_deg=theta_deg, projection="cartesian",
+                 has_skew=has_skew, skew_00=skew_00, skew_01=skew_01,
+                 skew_10=skew_10, skew_11=skew_11
+            )
+
+    fractal.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=max_iter,
+        M_divergence=1.e3,
+        BLA_eps=eps,
+    )
+
+    pp = Postproc_batch(fractal, calc_name)
+    
+    if base_layer == "continuous_iter":
+        pp.add_postproc(base_layer, Continuous_iter_pp())
+    elif base_layer == "distance_estimation":
+        pp.add_postproc("continuous_iter", Continuous_iter_pp())
+        pp.add_postproc(base_layer, DEM_pp())
+
+    pp.add_postproc("interior", Raw_pp("stop_reason",
+                    func=lambda x: x != 1))
+    if shade_kind != "None":
+        pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+
+    if shade_kind != "None":
+        plotter.add_layer(Normal_map_layer(
+            "DEM_map", max_slope=60, output=False
+        ))
+
+    if base_layer != 'continuous_iter':
+        plotter.add_layer(
+            Virtual_layer("continuous_iter", func=None, output=False)
+        )
+
+    sign = {False: 1., True: -1.}[invert_cmap]
+    if base_layer == 'distance_estimation':
+        cmap_func = lambda x: sign * np.where(
+           np.isinf(x),
+           np.log(DEM_min),
+           np.log(np.clip(x, DEM_min, None))
+        )
+    else:
+        cmap_func = lambda x: sign * np.log(x)
+
+    plotter.add_layer(Color_layer(
+            base_layer,
+            func=cmap_func,
+            colormap=colormap,
+            probes_z=[zmin, zmax],
+            output=True))
+    plotter[base_layer].set_mask(
+        plotter["interior"], mask_color=interior_color
+    )
+    if shade_kind != "None":
+        light = Blinn_lighting(0.6, np.array([1., 1., 1.]))
+        light.add_light_source(
+            k_diffuse=0.8,
+            k_specular=.0,
+            shininess=350.,
+            polar_angle=light_angle_deg,
+            azimuth_angle=10.,
+            color=np.array(light_color))
+
+        if shade_kind == "glossy":
+            light.add_light_source(
+                k_diffuse=0.2,
+                k_specular=gloss_intensity,
+                shininess=400.,
+                polar_angle=light_angle_deg,
+                azimuth_angle=10.,
+                color=np.array(gloss_light_color))
+
+        plotter[base_layer].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/20-perpendicular_burning_ship_Sierpinski.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+============================================================
+20 - "Perpendicular" Burning Ship: hidden Sierpinski carpets
+============================================================
+
+Another hidden feature in this fractal: here, Sierpinski triangular carpets
+at a depth of 7.e-55. This area is not too skeewed but well hidden close to a
+minibrot from the needle.
+
+Reference:
+`fractalshades.models.Perturbation_perpendicular_burning_ship`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+    fs.settings.log_directory = os.path.join(plot_dir, "log")
+    fs.set_log_handlers(verbosity="debug @ console + log")
+
+    # A simple showcase using perturbation technique
+    calc_name = 'test'
+
+    # _1 = 'Zoom parameters'
+    x = '-1.929319698524937920226708049698305350754670432084006734339806946'
+    y = '-0.0000000000000000007592779387989739090287550144163328879329853232537252481600401185'
+    dx = '7.032184999234219e-55'
+    xy_ratio = 1.6
+    theta_deg = -26.0
+    dps = 64
+    nx = 2400
+
+    # _1b = 'Skew parameters /!\\ Re-run when modified!'
+    has_skew = True
+    skew_00 = 1.05
+    skew_01 = 0.0
+    skew_10 = -0.1
+    skew_11 = 0.9523809
+
+    # _2 = 'Calculation parameters'
+    max_iter = 20000
+
+    # _3 = 'Bilinear series parameters'
+    eps = 1e-06
+
+    # _4 = 'Plotting parameters: base field'
+    base_layer = 'continuous_iter'
+    interior_color = (0.6627451181411743, 0.4313725531101227, 0.0)
+    colormap = fscolors.Fractal_colormap(
+    colors=[
+        [1.        , 1.        , 0.49803922],
+        [0.1254902 , 0.05098039, 0.36862746],
+        [0.1254902 , 0.05098039, 0.36862746]
+    ],
+    kinds=['Lch', 'Lch', 'Lch'],
+    grad_npts=[32, 32, 32],
+    grad_funcs=['1-(1-x)**3', 'x', 'x'],
+    extent='mirror'
+    )
+    invert_cmap = False
+    DEM_min = 1e-04
+    zmin = 8.713781356811523
+    zmax = 9.903434753417969
+
+    # _5 = 'Plotting parameters: shading'
+    shade_kind = 'glossy'
+    gloss_intensity = 30.0
+    light_angle_deg = 35.0
+    light_color = (1.0, 1.0, 1.0)
+    gloss_light_color = (1.0, 1.0, 1.0)
+
+    # Run the calculation
+    fractal = fsm.Perturbation_burning_ship(
+            plot_dir,
+            flavor="Perpendicular burning ship"
+    )
+
+    fractal.zoom(precision=dps, x=x, y=y, dx=dx, nx=nx, xy_ratio=xy_ratio,
+                 theta_deg=theta_deg, projection="cartesian", 
+                 has_skew=has_skew, skew_00=skew_00, skew_01=skew_01,
+                 skew_10=skew_10, skew_11=skew_11
+            )
+
+    fractal.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=max_iter,
+        M_divergence=1.e3,
+        BLA_eps=eps,
+    )
+
+
+    pp = Postproc_batch(fractal, calc_name)
+    
+    if base_layer == "continuous_iter":
+        pp.add_postproc(base_layer, Continuous_iter_pp())
+    elif base_layer == "distance_estimation":
+        pp.add_postproc("continuous_iter", Continuous_iter_pp())
+        pp.add_postproc(base_layer, DEM_pp())
+
+    pp.add_postproc("interior", Raw_pp("stop_reason",
+                    func=lambda x: x != 1))
+    if shade_kind != "None":
+        pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+
+    if shade_kind != "None":
+        plotter.add_layer(Normal_map_layer(
+            "DEM_map", max_slope=60, output=False
+        ))
+
+    if base_layer != 'continuous_iter':
+        plotter.add_layer(
+            Virtual_layer("continuous_iter", func=None, output=False)
+        )
+
+    sign = {False: 1., True: -1.}[invert_cmap]
+    if base_layer == 'distance_estimation':
+        cmap_func = lambda x: sign * np.where(
+           np.isinf(x),
+           np.log(DEM_min),
+           np.log(np.clip(x, DEM_min, None))
+        )
+    else:
+        cmap_func = lambda x: sign * np.log(x)
+
+    plotter.add_layer(Color_layer(
+            base_layer,
+            func=cmap_func,
+            colormap=colormap,
+            probes_z=[zmin, zmax],
+            output=True))
+    plotter[base_layer].set_mask(
+        plotter["interior"], mask_color=interior_color
+    )
+    if shade_kind != "None":
+        light = Blinn_lighting(0.6, np.array([1., 1., 1.]))
+        light.add_light_source(
+            k_diffuse=0.8,
+            k_specular=.0,
+            shininess=350.,
+            polar_angle=light_angle_deg,
+            azimuth_angle=10.,
+            color=np.array(light_color))
+
+        if shade_kind == "glossy":
+            light.add_light_source(
+                k_diffuse=0.2,
+                k_specular=gloss_intensity,
+                shininess=400.,
+                polar_angle=light_angle_deg,
+                azimuth_angle=10.,
+                color=np.array(gloss_light_color))
+
+        plotter[base_layer].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/21-perpendicular_burning_ship_trees.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+============================================================
+21 - "Perpendicular" Burning Ship: tree structures
+============================================================
+
+Another hidden feature in this fractal: here, tree structures
+at a depth of 1.e-29.
+
+Reference:
+`fractalshades.models.Perturbation_perpendicular_burning_ship`
+"""
+
+import os
+import numpy as np
+
+import fractalshades as fs
+import fractalshades.models as fsm
+
+import fractalshades.colors as fscolors
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+
+def plot(plot_dir):
+    fs.settings.enable_multithreading = True
+    fs.settings.inspect_calc = True
+
+    # A simple showcase using perturbation technique
+    calc_name = 'test'
+
+    # _1 = 'Zoom parameters'
+    x = '-1.60075649116104853234447567671822519294'
+    y = '-0.00000585584069328913182973043272000146363667'
+    dx = '1.345424030679299e-29'
+    xy_ratio = 1.6
+    theta_deg = 120.
+    dps = 64
+    nx = 2400
+
+    # _1b = 'Skew parameters /!\\ Re-run when modified!'
+    has_skew = True
+    skew_00 = -0.985244568474214
+    skew_01 = 0.6137988525
+    skew_10 = 0.8089497623371
+    skew_11 = -1.518945126681
+
+    # _2 = 'Calculation parameters'
+    max_iter = 6000
+
+    # _3 = 'Bilinear series parameters'
+    eps = 1e-06
+
+    # _4 = 'Plotting parameters: base field'
+    base_layer = 'continuous_iter'
+    interior_color = (0.6627451181411743, 0.4313725531101227, 0.0)
+    colormap = fscolors.Fractal_colormap(
+        colors=[
+            [1.        , 1.        , 0.        ],
+            [0.01176471, 0.07450981, 0.41960785],
+            [0.19215687, 0.65098041, 0.63529414],
+            [0.26666668, 1.        , 0.15294118],
+            [1.        , 1.        , 0.        ],
+            [1.        , 1.        , 0.        ],
+            [1.        , 1.        , 0.        ],
+            [1.        , 1.        , 0.        ]
+        ],
+        kinds=['Lch', 'Lch', 'Lch', 'Lch', 'Lch', 'Lch', 'Lch', 'Lch'],
+        grad_npts=[30, 32, 32, 32, 32, 32, 32, 32],
+        grad_funcs=['x**0.5', 'x', 'x', 'x', 'x', 'x', 'x', 'x'],
+        extent='repeat'
+    )
+    invert_cmap = False
+    DEM_min = 1e-06
+    zmin = 7.516922950744629
+    zmax = 8.069853782653809
+
+    # _5 = 'Plotting parameters: shading'
+    shade_kind = 'glossy'
+    gloss_intensity = 10.0
+    light_angle_deg = -120.
+    light_color = (1.0, 1.0, 1.0)
+    gloss_light_color = (1.0, 1.0, 1.0)
+
+    # Run the calculation
+    fractal = fsm.Perturbation_burning_ship(
+            plot_dir,
+            flavor="Perpendicular burning ship"
+    )
+
+    fractal.zoom(precision=dps, x=x, y=y, dx=dx, nx=nx, xy_ratio=xy_ratio,
+                 theta_deg=theta_deg, projection="cartesian",
+                 has_skew=has_skew, skew_00=skew_00, skew_01=skew_01,
+                 skew_10=skew_10, skew_11=skew_11
+            )
+
+    fractal.calc_std_div(
+        calc_name=calc_name,
+        subset=None,
+        max_iter=max_iter,
+        M_divergence=1.e3,
+        BLA_eps=eps,
+    )
+
+    pp = Postproc_batch(fractal, calc_name)
+    
+    if base_layer == "continuous_iter":
+        pp.add_postproc(base_layer, Continuous_iter_pp())
+    elif base_layer == "distance_estimation":
+        pp.add_postproc("continuous_iter", Continuous_iter_pp())
+        pp.add_postproc(base_layer, DEM_pp())
+
+    pp.add_postproc("interior", Raw_pp("stop_reason",
+                    func=lambda x: x != 1))
+    if shade_kind != "None":
+        pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+    plotter = fs.Fractal_plotter(pp)   
+    plotter.add_layer(Bool_layer("interior", output=False))
+
+    if shade_kind != "None":
+        plotter.add_layer(Normal_map_layer(
+            "DEM_map", max_slope=60, output=False
+        ))
+
+    if base_layer != 'continuous_iter':
+        plotter.add_layer(
+            Virtual_layer("continuous_iter", func=None, output=False)
+        )
+
+    sign = {False: 1., True: -1.}[invert_cmap]
+    if base_layer == 'distance_estimation':
+        cmap_func = lambda x: sign * np.where(
+           np.isinf(x),
+           np.log(DEM_min),
+           np.log(np.clip(x, DEM_min, None))
+        )
+    else:
+        cmap_func = lambda x: sign * np.log(x)
+
+    plotter.add_layer(Color_layer(
+            base_layer,
+            func=cmap_func,
+            colormap=colormap,
+            probes_z=[zmin, zmax],
+            output=True)
+    )
+    plotter[base_layer].set_mask(
+        plotter["interior"], mask_color=interior_color
+    )
+    if shade_kind != "None":
+        light = Blinn_lighting(0.6, np.array([1., 1., 1.]))
+        light.add_light_source(
+            k_diffuse=0.8,
+            k_specular=.0,
+            shininess=350.,
+            polar_angle=light_angle_deg,
+            azimuth_angle=10.,
+            color=np.array(light_color))
+
+        if shade_kind == "glossy":
+            light.add_light_source(
+                k_diffuse=0.2,
+                k_specular=gloss_intensity,
+                shininess=400.,
+                polar_angle=light_angle_deg,
+                azimuth_angle=10.,
+                color=np.array(gloss_light_color))
+
+        plotter[base_layer].shade(plotter["DEM_map"], light)
+
+    plotter.plot()
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/22-shark_fin_deep.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+============================================================
+22 - "Shark Fin" escape-time fractal
+============================================================
+
+Shark Fin is yet another `abs` variant, which features characteristic swirly
+structures.
+Here, an embeded Julia set at a depth of 4.73e-709
+
+Reference:
+`fractalshades.models.Perturbation_shark_fin`
+
+"""
+import os
+import typing
+
+import numpy as np
+import mpmath
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.gui as fsgui
+import fractalshades.colors as fscolors
+
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Virtual_layer,
+    Blinn_lighting,
+)
+
+def plot(plot_dir):
+
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    # Parameters
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    fractal = fsm.Perturbation_burning_ship(
+            plot_dir,
+            flavor="Shark fin"
+    )
+    calc_name = 'test'
+    _1 = 'Zoom parameters'
+    x = '-0.51589620268627970432443972140466026618218061060835255763287480145041290920221218736270428245220746279618295095166798752620726428609211826274613117053264928657361477467234927967848753770166731064805065463419553477373233269591169614800220483380564022654439634169986994659158374011085207126571652818183508697495230387717223608030522514636708124947753134519935604246289612244797927127587933109583025775968223378485067259810292595540274443866416810747689111293571346662942340520825497910806468006677501978335474464494846513169232172970646598024886328933772273261902456292147592478159136755604313683591557546924552731872428993587388001253830610215019930920128066319351540606478859235188128959774129483187488417147576690962535'
+    y = '-0.66245287866929999372606685018770977042741695086446507741696933368387025939056546346094155505184636005256929748124385822155668880701474708417984582422272710613772844669490417841138223472001735816407958513797076939299186620556823065549014718232791996093184517670844492605187891162197307252314413279558393819847771389763599825046453903796922405420550932465191160133017417295941396971611900071562514890047201047120102195410731923629108732235286316679314710301128526293690085499066374212739634013484802464773762266855871308625831096062738587245346740647723535571648059438999329620958795738080623529817798169870967107413952074751872860339286384952167472237089529593701827385040502112441301761365329882413960477126592518217051'
+    dx = '4.730268188484633e-709'
+    
+    xy_ratio = 1.8
+    theta_deg = 180.0
+    dps = 719
+    nx = 2400
+    _1b = 'Skew parameters /!\\ Re-run when modified!'
+    has_skew = True
+    skew_00 = 1.2082219388541917
+    skew_01 = 0.30450938998799054
+    skew_10 = -0.24552000996844184
+    skew_11 = 0.7657838529335976
+    _2 = 'Calculation parameters'
+    max_iter = 400000
+    _3 = 'Bilinear series parameters'
+    eps = 1e-06
+    _4 = 'Plotting parameters: base field'
+    base_layer = 'continuous_iter'
+    interior_color = (0.3333333432674408, 1.0, 0.49803921580314636)
+    colormap = fs.colors.cmap_register["classic"]
+    invert_cmap = True
+    DEM_min = 1e-10
+    zmin = 0.8 * (-12.720348358154297) + 0.2 * (-12.7184476852417)
+    zmax = -12.7184476852417
+    _5 = 'Plotting parameters: shading'
+    shade_kind = 'glossy'
+    gloss_intensity = 10.0
+    light_angle_deg = -135.0
+    light_color = (1.0, 1.0, 1.0)
+    gloss_light_color = (1.0, 1.0, 1.0)
+
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    # Plotting function
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    def func(
+         fractal,
+         calc_name: str=calc_name,
+
+         _1: fsgui.separator="Zoom parameters",
+         x: mpmath.mpf=x,
+         y: mpmath.mpf=y,
+         dx: mpmath.mpf=dx,
+         xy_ratio: float=xy_ratio,
+         theta_deg: float=theta_deg,
+         dps: int=dps,
+         nx: int=nx,
+
+         _1b: fsgui.separator="Skew parameters /!\ Re-run when modified!",
+         has_skew: bool=has_skew,
+         skew_00: float=1.,
+         skew_01: float=0.,
+         skew_10: float=0.,
+         skew_11: float=1.,
+
+         _2: fsgui.separator="Calculation parameters",
+         max_iter: int=max_iter,
+
+         _3: fsgui.separator="Bilinear series parameters",
+         eps: float=eps,
+
+         _4: fsgui.separator="Plotting parameters: base field",
+         base_layer: typing.Literal[
+                 "continuous_iter",
+                 "distance_estimation"
+         ]=base_layer,
+         interior_color=(0.1, 0.1, 0.1),
+         colormap: fscolors.Fractal_colormap=colormap,
+         invert_cmap: bool=False,
+         DEM_min: float=1.e-6,
+         zmin: float=zmin,
+         zmax: float=zmax,
+
+         _5: fsgui.separator="Plotting parameters: shading",
+         shade_kind: typing.Literal["None", "standard", "glossy"]=shade_kind,
+         gloss_intensity: float=10.,
+         light_angle_deg: float=65.,
+         light_color=(1.0, 1.0, 1.0),
+         gloss_light_color=(1.0, 1.0, 1.0),
+    ):
+
+
+        fractal.zoom(precision=dps, x=x, y=y, dx=dx, nx=nx, xy_ratio=xy_ratio,
+             theta_deg=theta_deg, projection="cartesian",
+             has_skew=has_skew, skew_00=skew_00, skew_01=skew_01,
+             skew_10=skew_10, skew_11=skew_11
+        )
+
+        fractal.calc_std_div(
+            calc_name=calc_name,
+            subset=None,
+            max_iter=max_iter,
+            M_divergence=1.e70,
+            BLA_eps=eps,
+        )
+
+        pp = Postproc_batch(fractal, calc_name)
+        
+        if base_layer == "continuous_iter":
+            pp.add_postproc(base_layer, Continuous_iter_pp())
+        elif base_layer == "distance_estimation":
+            pp.add_postproc("continuous_iter", Continuous_iter_pp())
+            pp.add_postproc(base_layer, DEM_pp())
+
+        pp.add_postproc("interior", Raw_pp("stop_reason",
+                        func=lambda x: x != 1))
+        if shade_kind != "None":
+            pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+        plotter = fs.Fractal_plotter(pp)   
+        plotter.add_layer(Bool_layer("interior", output=False))
+
+        if shade_kind != "None":
+            plotter.add_layer(Normal_map_layer(
+                "DEM_map", max_slope=40, output=False
+            ))
+
+        if base_layer != 'continuous_iter':
+            plotter.add_layer(
+                Virtual_layer("continuous_iter", func=None, output=False)
+            )
+
+        sign = {False: 1., True: -1.}[invert_cmap]
+        if base_layer == 'distance_estimation':
+            cmap_func = lambda x: sign * np.where(
+               np.isinf(x),
+               np.log(DEM_min),
+               np.log(np.clip(x, DEM_min, None))
+            )
+        else:
+            cmap_func = lambda x: sign * np.log(x)
+
+        plotter.add_layer(Color_layer(
+                base_layer,
+                func=cmap_func,
+                colormap=colormap,
+                probes_z=[zmin, zmax],
+                output=True))
+        plotter[base_layer].set_mask(
+            plotter["interior"], mask_color=interior_color
+        )
+        if shade_kind != "None":
+            light = Blinn_lighting(0.6, np.array([1., 1., 1.]))
+            light.add_light_source(
+                k_diffuse=0.8,
+                k_specular=.0,
+                shininess=350.,
+                polar_angle=light_angle_deg,
+                azimuth_angle=10.,
+                color=np.array(light_color))
+    
+            if shade_kind == "glossy":
+                light.add_light_source(
+                    k_diffuse=0.2,
+                    k_specular=gloss_intensity,
+                    shininess=400.,
+                    polar_angle=light_angle_deg,
+                    azimuth_angle=10.,
+                    color=np.array(gloss_light_color))
+
+            plotter[base_layer].shade(plotter["DEM_map"], light)
+
+        plotter.plot()
+
+
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    # Plotting call
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    func(fractal,
+        calc_name,
+        _1,
+        x,
+        y,
+        dx,
+        xy_ratio,
+        theta_deg,
+        dps,
+        nx,
+        _1b,
+        has_skew,
+        skew_00,
+        skew_01,
+        skew_10,
+        skew_11,
+        _2,
+        max_iter,
+        _3,
+        eps,
+        _4,
+        base_layer,
+        interior_color,
+        colormap,
+        invert_cmap,
+        DEM_min,
+        zmin,
+        zmax,
+        _5,
+        shade_kind,
+        gloss_intensity,
+        light_angle_deg,
+        light_color,
+        gloss_light_color
+    )
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+
+
+================================================
+FILE: examples/batch_mode/23-deep_min.py
+================================================
+# -*- coding: utf-8 -*-
+"""
+============================================================
+23 - A deep mini
+============================================================
+
+This is a simple showcase to demonstrate the acceleration
+provided by interior detection option for very deep minis.
+
+This example also uses the 'antialisasing' option to avoid
+moire effect.
+
+Reference:
+`fractalshades.models.Perturbation_mandelbrot`
+
+"""
+import os
+import typing
+
+import numpy as np
+import mpmath
+
+import fractalshades as fs
+import fractalshades.models as fsm
+import fractalshades.gui as fsgui
+import fractalshades.colors as fscolors
+
+from fractalshades.postproc import (
+    Postproc_batch,
+    Continuous_iter_pp,
+    DEM_normal_pp,
+    Fieldlines_pp,
+    DEM_pp,
+    Raw_pp,
+)
+from fractalshades.colors.layers import (
+    Color_layer,
+    Bool_layer,
+    Normal_map_layer,
+    Grey_layer,
+    Virtual_layer,
+    Blinn_lighting,
+    Overlay_mode
+)
+
+def plot(plot_dir):
+
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    # Parameters
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    fractal = fsm.Perturbation_mandelbrot(plot_dir)
+    calc_name = 'test'
+    _1 = 'Zoom parameters'
+    x = '-1.999966194450370304184346885063505796755312415407248515117619229448015842423426843813761297788689138122870464065609498643538105757447721664856724960928039200970806596464697897247034380275662515774719795646696735873798312804539648952681115225456179242935106837745884878805854902169393836872097394050590046057699087967010196239765406551942511353248935870676912381954206583589473663772650104637785419392949872755058895530738089740079985776336454731048155381424443368009147832298545439060874543314328347318610344753331544040936498231198149727109'
+    y = '0.0000000000000000000000000000000003001382436790938324072497303977592498734683119077333527017425728012047497561482358118564729928841407551922418650497818162547584808406226419681319987510966551024915920858367060072851094384239104512934585936736294083320495556911255641034741860247735534144716575799510702390797404223208558592193988956228128312647425358021104123150623316403610610181133505002078608735365638116235012859863602970282687765675758728641685358330772131661136113532338021950485899263595349420350880557330865130440135716258565997502285180701052571648187007997490077027'
+    dx = '5.06722630e-433'
+    xy_ratio = 1.0
+    theta_deg = 0.0
+    dps = 550
+    nx = 3200
+    _2 = 'Calculation parameters'
+    max_iter = 400000000
+    M_divergence = 100.0
+    interior_detect = True
+    epsilon_stationnary = 0.001
+    _3 = 'Bilinear series parameters'
+    use_BLA = True
+    eps = 1e-06
+    _4 = 'Plotting parameters: base field'
+    base_layer = 'continuous_iter'
+    interior_mask = 'all'
+    interior_color = (1.0, 0.0, 0.49803921580314636)
+    colormap = fs.colors.Fractal_colormap(
+        colors=[[1.        , 1.        , 1.        ],
+     [0.39215687, 0.39215687, 0.39215687],
+     [0.39215687, 0.39215687, 0.39215687],
+     [0.39215687, 0.39215687, 0.39215687]],
+        kinds=['Lch', 'Lch', 'Lch', 'Lch'],
+        grad_npts=[32, 32, 32,  3],
+        grad_funcs=['x', 'x', 'x', 'x'],
+        extent='mirror'
+    )
+    invert_cmap = False
+    zmin = 13.193805694580078
+    zmax = 0.34 * 13.193805694580078 + 0.66 * 19.80672264099121
+    _5 = 'Plotting parameters: shading'
+    shade_kind = 'glossy'
+    gloss_intensity = 10.0
+    light_angle_deg = 65.0
+    light_color = (1.0, 1.0, 1.0)
+    gloss_light_color = (1.0, 1.0, 1.0)
+    _6 = 'Plotting parameters: field lines'
+    field_kind = 'None'
+    n_iter = 3
+    swirl = 0.0
+    damping_ratio = 0.8
+    twin_intensity = 0.1
+
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    # Plotting function
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    def func(
+        fractal: fsm.Perturbation_mandelbrot=fractal,
+         calc_name: str=calc_name,
+
+         _1: fsgui.separator="Zoom parameters",
+         x: mpmath.mpf=x,
+         y: mpmath.mpf=y,
+         dx: mpmath.mpf=dx,
+         xy_ratio: float=xy_ratio,
+         theta_deg: float=theta_deg,
+         dps: int=dps,
+         nx: int=nx,
+
+         _2: fsgui.separator="Calculation parameters",
+         max_iter: int=max_iter,
+         M_divergence: float=M_divergence,
+         interior_detect: bool=interior_detect,
+         epsilon_stationnary: float=epsilon_stationnary,
+
+         _3: fsgui.separator="Bilinear series parameters",
+         use_BLA: bool=True,
+         eps: float=eps,
+
+         _4: fsgui.separator="Plotting parameters: base field",
+         base_layer: typing.Literal[
+                 "continuous_iter",
+                 "distance_estimation"
+         ]=base_layer,
+         interior_mask: typing.Literal[
+                 "all",
+                 "not_diverging",
+                 "dzndz_detection",
+         ]="all",
+         interior_color=(0.1, 0.1, 0.1),
+         colormap: fscolors.Fractal_colormap=colormap,
+         invert_cmap: bool=False,
+         zmin: float=zmin,
+         zmax: float=zmax,
+
+         _5: fsgui.separator="Plotting parameters: shading",
+         shade_kind: typing.Literal["None", "standard", "glossy"]=shade_kind,
+         gloss_intensity: float=10.,
+         light_angle_deg: float=65.,
+         light_color=(1.0, 1.0, 1.0),
+         gloss_light_color=(1.0, 1.0, 1.0),
+
+         _6: fsgui.separator="Plotting parameters: field lines",
+         field_kind: typing.Literal["None", "overlay", "twin"]=field_kind,
+         n_iter: int=3,
+         swirl: float=0.,
+         damping_ratio: float=0.8,
+         twin_intensity: float=0.1
+    ):
+
+        fractal.zoom(
+            precision=dps,
+            x=x,
+            y=y,
+            dx=dx,
+            nx=nx,
+            xy_ratio=xy_ratio,
+            theta_deg=theta_deg,
+            projection="cartesian",
+        )
+
+        if use_BLA:
+            BLA_eps=eps
+        else:
+            BLA_eps=None
+            
+        fractal.calc_std_div(
+                calc_name=calc_name,
+                subset=None,
+                max_iter=max_iter,
+                M_divergence=M_divergence,
+                epsilon_stationnary=epsilon_stationnary,
+                BLA_eps=BLA_eps,
+                interior_detect=interior_detect,
+            )
+
+        pp = Postproc_batch(fractal, calc_name)
+        
+        if base_layer == "continuous_iter":
+            pp.add_postproc(base_layer, Continuous_iter_pp())
+        elif base_layer == "distance_estimation":
+            pp.add_postproc("continuous_iter", Continuous_iter_pp())
+            pp.add_postproc(base_layer, DEM_pp())
+
+        if field_kind != "None":
+            pp.add_postproc(
+                "fieldlines",
+                Fieldlines_pp(n_iter, swirl, damping_ratio)
+            )
+
+        interior_func = {
+            "all": lambda x: x != 1,
+            "not_diverging": lambda x: x == 0,
+            "dzndz_detection": lambda x: x == 2,
+        }[interior_mask]
+        pp.add_postproc("interior", Raw_pp("stop_reason", func=interior_func))
+
+        if shade_kind != "None":
+            pp.add_postproc("DEM_map", DEM_normal_pp(kind="potential"))
+
+        plotter = fs.Fractal_plotter(pp)
+
+        plotter.add_layer(Bool_layer("interior", output=False))
+
+        if field_kind == "twin":
+            plotter.add_layer(Virtual_layer(
+                    "fieldlines", func=None, output=False
+            ))
+        elif field_kind == "overlay":
+            plotter.add_layer(Grey_layer(
+                    "fieldlines", func=None, output=False
+            ))
+
+        if shade_kind != "None":
+            plotter.add_layer(Normal_map_layer(
+                "DEM_map", max_slope=40, output=False
+            ))
+
+        if base_layer != 'continuous_iter':
+            plotter.add_layer(
+                Virtual_layer("continuous_iter", func=None, output=False)
+            )
+
+        sign = {False: 1., True: -1.}[invert_cmap]
+        plotter.add_layer(Color_layer(
+                base_layer,
+                func=lambda x: sign * np.log(x),
+                colormap=colormap,
+                probes_z=[zmin, zmax],
+                output=True))
+        plotter[base_layer].set_mask(
+            plotter["interior"], mask_color=interior_color
+        )
+
+        if field_kind == "twin":
+            plotter[base_layer].set_twin_field(plotter["fieldlines"],
+                   twin_intensity)
+        elif field_kind == "overlay":
+            overlay_mode = Overlay_mode("tint_or_shade", pegtop=1.0)
+            plotter[base_layer].overlay(plotter["fieldlines"], overlay_mode)
+
+        if shade_kind != "None":
+            light = Blinn_lighting(0.6, np.array([1., 1., 1.]))
+            light.add_light_source(
+                k_diffuse=0.8,
+                k_specular=.0,
+                shininess=350.,
+                polar_angle=light_angle_deg,
+                azimuth_angle=10.,
+                color=np.array(light_color)
+            )
+            if shade_kind == "glossy":
+                light.add_light_source(
+                    k_diffuse=0.2,
+                    k_specular=gloss_intensity,
+                    shininess=400.,
+                    polar_angle=light_angle_deg,
+                    azimuth_angle=10.,
+                    color=np.array(gloss_light_color)
+                )
+    
+            plotter[base_layer].shade(plotter["DEM_map"], light)
+
+        plotter.plot()
+
+
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    # Plotting call
+    #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    func(fractal,
+        calc_name,
+        _1,
+        x,
+        y,
+        dx,
+        xy_ratio,
+        theta_deg,
+        dps,
+        nx,
+        _2,
+        max_iter,
+        M_divergence,
+        interior_detect,
+        epsilon_stationnary,
+        _3,
+        use_BLA,
+        eps,
+        _4,
+        base_layer,
+        interior_mask,
+        interior_color,
+        colormap,
+        invert_cmap,
+        zmin,
+        zmax,
+        _5,
+        shade_kind,
+        gloss_intensity,
+        light_angle_deg,
+        light_color,
+        gloss_light_color,
+        _6,
+        field_kind,
+        n_iter,
+        swirl,
+        damping_ratio,
+        twin_intensity
+    )
+
+
+if __name__ == "__main__":
+    # Some magic to get the directory for plotting: with a name that matches
+    # the file or a temporary dir if we are building the documentation
+    try:
+        realpath = os.path.realpath(__file__)
+        plot_dir = os.path.splitext(realpath)[0]
+        plot(plot_dir)
+    except NameError:
+        import tempfile
+        with tempfile.TemporaryDirectory() as plot_dir:
+            fs.utils.exec_no_output(plot, plot_dir)
+
+

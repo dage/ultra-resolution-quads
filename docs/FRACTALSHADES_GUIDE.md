@@ -22,9 +22,11 @@ renderer = FractalShadesRenderer("artifacts/my_renders")
 
 # Render a standard Mandelbrot image
 path = renderer.render(
-    center_x=-0.743643887037151,
-    center_y=0.13182590420533,
-    width=0.002,
+    fractal_type="mandelbrot",
+    x="-0.743643887037151",
+    y="0.13182590420533",
+    dx="0.002",
+    nx=800,
     max_iter=2000,
     filename="basic_fractal.png",
     colormap="citrus"
@@ -33,98 +35,109 @@ path = renderer.render(
 
 ### Selecting Fractal Models
 
-Use the `model` parameter to switch between supported fractal types:
+Use the `fractal_type` parameter to switch between supported fractal types. Some models support specific `flavor` variants.
 
-- `"mandelbrot"` (default)
-- `"burning_ship"`
-- `"mandelbrot_n"` (Requires `mandelbrot_n_exponent`)
-- `"power_tower"`
+- **Mandelbrot**: `fractal_type="mandelbrot"`
+- **Burning Ship**: `fractal_type="burning_ship"`
+    - **Shark Fin**: `fractal_type="shark_fin"` (or `flavor="Shark fin"`)
+    - **Perpendicular**: `fractal_type="perpendicular_burning_ship"` (or `flavor="Perpendicular burning ship"`)
+- **Power Tower**: `fractal_type="power_tower"`
+- **Mandelbrot N**: `fractal_type="mandelbrot_n"` (requires `exponent`)
 
 ```python
-# Render Burning Ship
+# Render Shark Fin
 renderer.render(
-    model="burning_ship",
-    center_x=-1.75, 
-    center_y=-0.03, 
-    width=0.05, 
-    filename="ship.png"
+    fractal_type="shark_fin",
+    x="-0.5", y="-0.65", dx="0.5", 
+    filename="shark.png"
 )
 
 # Render Mandelbrot^3
 renderer.render(
-    model="mandelbrot_n",
-    mandelbrot_n_exponent=3,
-    center_x=0, center_y=0, width=2.0,
+    fractal_type="mandelbrot_n",
+    exponent=3,
+    x="0", y="0", dx="2.0",
     filename="multibrot.png"
 )
 ```
 
 ### Deep Zooming (Perturbation Theory)
 
-For zooms deeper than `1e-13` (beyond standard float64 precision), you **must** enable perturbation theory.
+For zooms deeper than `1e-13` (beyond standard float64 precision), perturbation theory is automatically enabled if you provide `precision` (dps) or very small `dx`.
 
-- Set `use_perturbation=True`
-- Pass coordinates as **strings** to preserve precision
-- Set `dps` (decimal precision) to an appropriate integer (e.g., 50, 100, 1000)
+- **Always** pass coordinates as **strings** to preserve precision.
+- Set `precision` (decimal digits) explicitly for control.
 
 ```python
 renderer.render(
-    use_perturbation=True,    # Enable deep zoom engine
-    dps=60,                   # Precision in decimal digits
-    center_x="-1.74999900000000000000000000000001", 
-    center_y="-0.0000073095",
-    width="1.0e-30",
-    model="burning_ship",     # Works for "mandelbrot" and "burning_ship"
+    fractal_type="mandelbrot",
+    x="-1.74999900000000000000000000000001", 
+    y="-0.0000073095",
+    dx="1.0e-30",
+    precision=60,
     filename="deep_zoom.png"
 )
 ```
 
 ### Visualization Styles
 
-The renderer supports high-level visualization presets via the `visualization` parameter:
+The renderer supports a flexible layering system controlled by `base_layer` and additional config objects.
 
-1.  **`"continuous_iter"`** (Default): Standard smooth escape-time coloring.
-2.  **`"fieldlines"`**: Adds flowing field lines to the rendering.
-3.  **`"dem"`**: Distance Estimation Method (pseudo-3D relief).
-
-You can also enable 3D lighting effects with `add_lighting=True` (works best with DEM).
+#### 1. Distance Estimation (DEM)
+Renders the fractal with distance estimation (smooth gradients based on distance to the set) instead of simple iteration counting.
 
 ```python
-# Fieldlines
 renderer.render(
-    visualization="fieldlines",
+    base_layer="distance_estimation",
+    colormap="hot",
+    filename="dem.png"
+)
+```
+
+#### 2. Fieldlines
+Adds flowing lines that visualize the potential field.
+
+- **Overlay**: Grey lines drawn on top of the color.
+- **Twin**: Lines that mathematically mix with the underlying color.
+
+```python
+renderer.render(
+    fieldlines_kind="twin",  # or "overlay"
+    fieldlines_func={"n_iter": 4, "swirl": 0.0, "twin_intensity": 0.5},
     colormap="ocean",
     filename="fieldlines.png"
 )
+```
 
-# 3D Lighting with DEM
+#### 3. 3D Lighting (Shading)
+Adds simulated 3D lighting to the image, often used with DEM or glossy effects.
+
+```python
 renderer.render(
-    visualization="dem",
-    add_lighting=True,
-    filename="3d_dem.png"
+    shade_kind="glossy",  # or "standard"
+    lighting_config={
+        "k_diffuse": 0.4, 
+        "k_specular": 30.0, 
+        "shininess": 400.0,
+        "polar_angle": 135.0, 
+        "gloss_light_color": [1.0, 0.9, 0.9]
+    },
+    filename="glossy.png"
 )
 ```
 
 ### Advanced Features
 
 #### Burning Ship Skew
-Deep Burning Ship zooms often require "un-skewing" to prevent the image from looking stretched.
+Deep Burning Ship zooms often require "un-skewing".
 
 ```python
 renderer.render(
-    model="burning_ship",
-    skew_matrix=(1.0, 0.0, 0.0, 1.0), # (skew_00, skew_01, skew_10, skew_11)
-    # ...
-)
-```
-
-#### Projections
-Support for alternative mappings of the complex plane.
-
-```python
-renderer.render(
-    projection_type="expmap", # or "moebius", "cartesian"
-    # projection_params={"...": ...} 
+    fractal_type="burning_ship",
+    skew_params={
+        "skew_00": 1.0, "skew_01": 0.0, 
+        "skew_10": 0.0, "skew_11": 1.0
+    },
     # ...
 )
 ```
@@ -133,78 +146,12 @@ renderer.render(
 
 ## Underlying Library Concepts (Reference)
 
-The following sections describe the raw `fractalshades` API. Use this only if you need to modify the `FractalShadesRenderer` internals or create a custom renderer that the wrapper doesn't support.
+Use the raw `fractalshades` API only if you need to modify `backend/fractal_renderer.py`.
 
 ### Core Architecture
-
-1. **Calculation Components** (`fractalshades.Fractal` subclasses) - Run calculations.
-2. **Plotting Components** (`fractalshades.Fractal_plotter`) - Apply post-processing.
-
-### Raw Model Instantiation
-
-#### Standard Precision
-```python
-from fractalshades.models import Mandelbrot, Burning_ship, Mandelbrot_N
-
-# Mandelbrot
-m = Mandelbrot(directory="out")
-m.zoom(x=-0.7, y=0.0, dx=3.0, nx=800, xy_ratio=1.0, theta_deg=0.0)
-
-# Burning Ship
-b = Burning_ship(directory="out")
-b.zoom(x=-1.75, y=-0.03, dx=0.05, nx=800, xy_ratio=1.0)
-```
-
-#### Arbitrary Precision (Perturbation)
-```python
-from fractalshades.models import Perturbation_mandelbrot
-
-pm = Perturbation_mandelbrot(directory="out")
-pm.zoom(
-    x="-0.7436...", y="0.1318...", dx="1.e-15", 
-    nx=1200, xy_ratio=1.0, dps=50, max_iter=100000
-)
-```
-
-### Post-Processing Layers
-
-Fractalshades uses "layers" to build the final image.
-
-```python
-import fractalshades as fs
-from fractalshades import postproc as pp
-
-plotter = fs.Fractal_plotter(fractal=m, calc_name="div_layer")
-
-# Add a color layer
-plotter.add_layer(
-    bool_layer=False,
-    output_fn=lambda x: x.continuous_iter,
-    colormap=fs.colors.Fractal_colormap.get("citrus"),
-    probes_z=[fs.numpy_utils.expr_parser.Numpy_expr("z", "continuous_iter")]
-)
-plotter.plot()
-```
-
-### Working with Color Palettes
-
-#### Creating Custom Colormaps
-```python
-from fractalshades.colors import Fractal_colormap
-
-colors = [
-    [0.0, 0.0, 0.5],    # Dark blue
-    [0.0, 0.5, 1.0],    # Light blue
-    [1.0, 1.0, 0.0]     # Yellow
-]
-
-colormap = Fractal_colormap(
-    colors=colors,
-    kinds=['Lch', 'Lch'],
-    grad_npts=[32, 32],
-    extent='mirror'
-)
-```
+1. **Calculation Components**: `fractalshades.Fractal` subclasses (run calculations).
+2. **Post-Processing**: `fractalshades.postproc` (DEM, Fieldlines, Continuous Iteration).
+3. **Plotting**: `fractalshades.Fractal_plotter` (Layers, Masks, Shading).
 
 ### Resources
 - [Fractalshades Documentation](https://gbillotey.github.io/Fractalshades-doc/)
