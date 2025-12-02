@@ -23,6 +23,28 @@ _renderer_instance = None
 def ensure_dirs(path):
     os.makedirs(path, exist_ok=True)
 
+def parse_tiles_arg(tile_str):
+    """
+    Parse a comma-separated list of tiles specified as 'level/x/y' or 'level:x:y'.
+    Returns a list of (level, x, y) tuples.
+    """
+    tiles = []
+    if not tile_str:
+        return tiles
+    parts = tile_str.split(",")
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if "/" in p:
+            l, x, y = p.split("/")
+        elif ":" in p:
+            l, x, y = p.split(":")
+        else:
+            raise ValueError(f"Invalid tile format '{p}'. Use level/x/y or level:x:y")
+        tiles.append((int(l), int(x), int(y)))
+    return tiles
+
 def tiles_base_path(dataset_id, tile_size):
     """
     Return the root path for tiles. 
@@ -107,7 +129,7 @@ def _render_tile(args):
     img.save(img_path)
     return True
 
-def render_tasks(renderer, tasks, use_multiprocessing=True):
+def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
     """Render a list of (level, x, y, base_path) tasks, skipping those already present."""
     if not tasks:
         print("No new tiles needed.")
@@ -125,9 +147,10 @@ def render_tasks(renderer, tasks, use_multiprocessing=True):
          print("Multithreading disabled by configuration.")
 
     if use_multiprocessing:
-        print(f"Rendering {len(tasks)} missing tiles with 8 workers...")
+        workers = num_workers if num_workers and num_workers > 0 else 8
+        print(f"Rendering {len(tasks)} missing tiles with {workers} workers...")
         try:
-            with ProcessPoolExecutor(max_workers=8, initializer=_init_renderer_worker, initargs=(renderer,)) as executor:
+            with ProcessPoolExecutor(max_workers=workers, initializer=_init_renderer_worker, initargs=(renderer,)) as executor:
                 for idx, created in enumerate(executor.map(_render_tile, tasks), 1):
                     if idx % 100 == 0:
                         print(f"Rendering {idx}/{len(tasks)}...")
@@ -206,7 +229,7 @@ def load_path(dataset_id: str):
         raise ValueError(f"paths.json for dataset '{dataset_id}' must contain an object under the 'path' key.")
     return path_obj
 
-def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=True):
+def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=True, num_workers=8):
     tasks = []
     total_tiles = 0
     for level in range(max_level + 1):
@@ -226,10 +249,31 @@ def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=Tr
         print(f"Full mode: {len(tasks)} / {total_tiles} tiles missing; rendering now...")
     else:
         print("Full mode: all tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing)
+    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
     return generated, total_tiles, len(tasks)
 
-def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000, use_multiprocessing=True):
+
+def generate_selected_tiles(renderer, base_path, tiles, use_multiprocessing=True, num_workers=8):
+    """
+    Render only the explicitly provided tiles (list of (level, x, y)).
+    """
+    tasks = []
+    for (level, x, y) in tiles:
+        level_path = os.path.join(base_path, str(level))
+        x_path = os.path.join(level_path, str(x))
+        ensure_dirs(x_path)
+        img_path = os.path.join(x_path, f"{y}.png")
+        if not os.path.exists(img_path):
+            tasks.append((level, x, y, base_path))
+    tasks.sort(key=lambda t: (t[0], t[1], t[2]))
+    if tasks:
+        print(f"Selected tiles: {len(tasks)} / {len(tiles)} missing; rendering now...")
+    else:
+        print("Selected tiles: all requested tiles already present; nothing to do.")
+    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+    return generated, len(tiles), len(tasks)
+
+def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000, use_multiprocessing=True, num_workers=8):
     if not path:
         print(f"No path defined for {dataset_id}; skipping path-based generation.")
         return 0
@@ -265,7 +309,7 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000,
         print(f"Path mode: {len(tasks)} new tiles to render (of {len(required_tiles)} unique).")
     else:
         print("Path mode: all required tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing)
+    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
     return generated
 
 
@@ -276,6 +320,8 @@ def main():
     parser.add_argument('--max_level', type=int, default=None, help='Max level to generate for "full" mode (defaults to config or 4)')
     parser.add_argument('--mode', choices=['full', 'path'], default=None, help='Generation mode (defaults to config or "path")')
     parser.add_argument('--rebuild', action='store_true', help='Delete existing tiles for the dataset(s) before rendering')
+    parser.add_argument('--tiles', default=None, help="Optional comma-separated list of tiles to render, formatted as level/x/y (e.g., '0/0/0,1/0/1'). When provided, overrides mode/max_level and renders only these tiles.")
+    parser.add_argument('--workers', type=int, default=None, help="Optional number of workers for multiprocessing (>=2). Use 1 to force single-process.")
     
     args = parser.parse_args()
 
@@ -354,40 +400,50 @@ def main():
                 print(f"Skipping dataset '{dataset_id}' in path mode: {exc}")
                 continue
 
-        print(f"Mode: {mode}")
-        if mode == 'full':
-            print(f"Generating FULL pyramid (max_level={max_level})...")
+        # Decide rendering strategy
+        explicit_tiles = parse_tiles_arg(args.tiles) if args.tiles else []
+        num_workers = args.workers if args.workers is not None else 8
+        use_multiprocessing = supports_multithreading and (num_workers != 1)
+
+        if explicit_tiles:
+            print(f"Rendering explicit tiles: {explicit_tiles}")
             start_time = time.time()
-            generated, total_tiles, missing = generate_full_pyramid(renderer, dataset_tiles_root, max_level, use_multiprocessing=supports_multithreading)
+            generated, total_tiles, missing = generate_selected_tiles(
+                renderer, dataset_tiles_root, explicit_tiles, use_multiprocessing=use_multiprocessing, num_workers=num_workers
+            )
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
-            # File size stats
-            file_count = 0
-            total_bytes = 0
-            for root, _, files in os.walk(dataset_tiles_root):
-                for fname in files:
-                    if fname.lower().endswith('.png'):
-                        file_count += 1
-                        total_bytes += os.path.getsize(os.path.join(root, fname))
-            avg_size = total_bytes / file_count if file_count else 0.0
-            avg_kb = avg_size / 1024.0
+        elif mode == 'full':
+            print(f"Mode: full | max_level={max_level}")
+            start_time = time.time()
+            generated, total_tiles, missing = generate_full_pyramid(renderer, dataset_tiles_root, max_level, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+            elapsed = time.time() - start_time
+            avg = elapsed / generated if generated else 0.0
+        else:
+            print("Mode: path")
+            start_time = time.time()
+            generated = generate_tiles_along_path(renderer, dataset_tiles_root, dataset_id, path_data, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+            elapsed = time.time() - start_time
+            avg = elapsed / generated if generated else 0.0
+            total_tiles = None
+            missing = None
+
+        # File size stats
+        file_count = 0
+        total_bytes = 0
+        for root, _, files in os.walk(dataset_tiles_root):
+            for fname in files:
+                if fname.lower().endswith('.png'):
+                    file_count += 1
+                    total_bytes += os.path.getsize(os.path.join(root, fname))
+        avg_size = total_bytes / file_count if file_count else 0.0
+        avg_kb = avg_size / 1024.0
+
+        if explicit_tiles:
+            print(f"Stats: generated={generated}, requested_missing={missing}, requested_total={total_tiles}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={dataset_tiles_root}")
+        elif mode == 'full':
             print(f"Stats: generated={generated}, requested_missing={missing}, total_possible={total_tiles}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={dataset_tiles_root}")
         else:
-            print("Generating tiles along PATH...")
-            start_time = time.time()
-            generated = generate_tiles_along_path(renderer, dataset_tiles_root, dataset_id, path_data, use_multiprocessing=supports_multithreading)
-            elapsed = time.time() - start_time
-            avg = elapsed / generated if generated else 0.0
-            # File size stats
-            file_count = 0
-            total_bytes = 0
-            for root, _, files in os.walk(dataset_tiles_root):
-                for fname in files:
-                    if fname.lower().endswith('.png'):
-                        file_count += 1
-                        total_bytes += os.path.getsize(os.path.join(root, fname))
-            avg_size = total_bytes / file_count if file_count else 0.0
-            avg_kb = avg_size / 1024.0
             print(f"Stats: tiles_generated={generated}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={dataset_tiles_root}")
             
     print("Done.")
