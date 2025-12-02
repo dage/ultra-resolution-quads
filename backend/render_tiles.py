@@ -118,6 +118,7 @@ def _init_renderer_worker(renderer):
 
 
 def _render_tile(args):
+    t0 = time.time()
     level, x, y, base_path = args
 
     level_path = os.path.join(base_path, str(level), str(x))
@@ -125,14 +126,14 @@ def _render_tile(args):
     img_path = os.path.join(level_path, f"{y}.png")
 
     if os.path.exists(img_path):
-        return False
+        return False, 0.0
 
     if _renderer_instance is None:
         raise RuntimeError("Renderer instance not initialized in worker")
 
     img = _renderer_instance.render(level, x, y)
     img.save(img_path)
-    return True
+    return True, time.time() - t0
 
 def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
     """Render a list of (level, x, y, base_path) tasks, skipping those already present."""
@@ -141,6 +142,9 @@ def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
         return 0
 
     generated = 0
+    last_update_time = time.time()
+    batch_duration = 0.0
+    batch_count = 0
     
     # Fallback check if method exists on renderer (legacy)
     if use_multiprocessing and hasattr(renderer, 'supports_multithreading') and not renderer.supports_multithreading():
@@ -156,11 +160,20 @@ def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
         print(f"Rendering {len(tasks)} missing tiles with {workers} workers...")
         try:
             with ProcessPoolExecutor(max_workers=workers, initializer=_init_renderer_worker, initargs=(renderer,)) as executor:
-                for idx, created in enumerate(executor.map(_render_tile, tasks), 1):
-                    if idx % 100 == 0:
-                        print(f"Rendering {idx}/{len(tasks)}...")
+                for idx, (created, duration) in enumerate(executor.map(_render_tile, tasks), 1):
                     if created:
                         generated += 1
+                    
+                    batch_duration += duration
+                    batch_count += 1
+
+                    now = time.time()
+                    if now - last_update_time > 60:
+                        avg = batch_duration / batch_count if batch_count > 0 else 0.0
+                        print(f"Rendering {idx}/{len(tasks)}... Avg generation (last {batch_count}): {avg:.2f}s")
+                        last_update_time = now
+                        batch_duration = 0.0
+                        batch_count = 0
         except Exception as e:
             print(f"Parallel rendering failed ({e}); falling back to single-process mode...")
             use_multiprocessing = False
@@ -169,11 +182,20 @@ def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
         print(f"Rendering {len(tasks)} tiles in single process...")
         _init_renderer_worker(renderer)
         for idx, task in enumerate(tasks, 1):
-            created = _render_tile(task)
-            if idx % 100 == 0:
-                print(f"Rendering {idx}/{len(tasks)}...")
+            created, duration = _render_tile(task)
             if created:
                 generated += 1
+            
+            batch_duration += duration
+            batch_count += 1
+
+            now = time.time()
+            if now - last_update_time > 60:
+                avg = batch_duration / batch_count if batch_count > 0 else 0.0
+                print(f"Rendering {idx}/{len(tasks)}... Avg generation (last {batch_count}): {avg:.2f}s")
+                last_update_time = now
+                batch_duration = 0.0
+                batch_count = 0
     
     print(f"Rendering complete. Generated {generated} tiles.")
     return generated
