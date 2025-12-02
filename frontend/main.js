@@ -57,7 +57,10 @@ const els = {
         playPause: document.getElementById('btn-play-pause'),
         fwd: document.getElementById('btn-skip-fwd'),
         end: document.getElementById('btn-skip-end')
-    }
+    },
+    btnFullscreen: document.getElementById('btn-fullscreen'),
+    btnToggleUI: document.getElementById('btn-toggle-ui'),
+    app: document.getElementById('app')
 };
 
 // Initialization
@@ -72,12 +75,105 @@ async function init() {
     }
     
     setupEventListeners();
+    setupUIControls();
     updateCursor();
     
     // Initialize transform origin for rotation
     if (els.layers) els.layers.style.transformOrigin = 'center center';
     
     requestAnimationFrame(renderLoop);
+}
+
+function setupUIControls() {
+    // 1. Fullscreen Logic
+    if (els.btnFullscreen) {
+        const iconEnter = '<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>';
+        const iconExit = '<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>';
+
+        const updateFsIcon = () => {
+            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+            const svg = els.btnFullscreen.querySelector('svg');
+            if (svg) svg.innerHTML = isFullscreen ? iconExit : iconEnter;
+            els.btnFullscreen.title = isFullscreen ? "Exit Fullscreen" : "Toggle Fullscreen";
+            
+            // Auto-collapse/expand UI based on fullscreen state
+            if (els.app) {
+                if (isFullscreen) {
+                    els.app.classList.add('ui-collapsed');
+                } else {
+                    els.app.classList.remove('ui-collapsed');
+                }
+                // Update the toggle button icon to reflect the new state
+                updateToggleIcon();
+                // Force resize update since layout changed
+                updateViewSize();
+            }
+        };
+
+        els.btnFullscreen.addEventListener('click', () => {
+            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+            if (!isFullscreen) {
+                const req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+                if (req) req.call(document.documentElement).catch(console.error);
+            } else {
+                const exit = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exit) exit.call(document);
+            }
+        });
+
+        document.addEventListener('fullscreenchange', updateFsIcon);
+        document.addEventListener('webkitfullscreenchange', updateFsIcon);
+        
+        // Initial check
+        updateFsIcon();
+    }
+
+    // 2. UI Toggle Logic
+    if (els.btnToggleUI && els.app) {
+        // Icons for "Show Panel" (Sidebar left) vs "Hide Panel" (Sidebar right)
+        // Hide Panel (Right Arrow ->)
+        const iconHide = '<path d="M4 18h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2zm0-10h16v8H4V8z"/>'; 
+        // Show Panel (Left Arrow <-) -- Just using a simple placeholder icon logic for now
+        // Actually, let's use specific icons:
+        // Open: Panel visible. Icon should suggest "Close".
+        const iconPanelVisible = '<path d="M5 19h14V5H5v14zm4-7h6v2H9v-2z"/>'; // A simple box or minus? Let's stick to the generic sidebar icons.
+        
+        // Better Material Design Icons
+        // "Web Asset" (like a browser window with sidebar)
+        const iconUI = '<path d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H5V8h14v10z"/>';
+        const iconUIOff = '<path d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H5V8h14v10z"/>'; // Same for now, toggling opacity/slash?
+        
+        // Let's just toggle opacity or something. Or use a specific "Sidebar" icon.
+        // Sidebar Open (to hide): 'Subject' or 'View Sidebar'
+        // Sidebar Closed (to show):
+        
+        els.btnToggleUI.addEventListener('click', () => {
+            els.app.classList.toggle('ui-collapsed');
+            updateToggleIcon();
+            updateViewSize();
+        });
+    }
+}
+
+function updateToggleIcon() {
+    if (!els.btnToggleUI) return;
+    const isCollapsed = els.app.classList.contains('ui-collapsed');
+    const svg = els.btnToggleUI.querySelector('svg');
+    if (svg) {
+        // Simple visual cue: If collapsed, maybe show an icon indicating "Open Menu".
+        // If open, show "Close Menu".
+        // For now, we keep the static icon but maybe change color or opacity? 
+        // Or toggle the icon path.
+        if (isCollapsed) {
+            // Icon to "Show"
+            svg.innerHTML = '<path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>'; // Hamburger menu
+            els.btnToggleUI.title = "Show UI Panel";
+        } else {
+            // Icon to "Hide"
+            svg.innerHTML = '<path d="M4 18h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2zm0-10h16v8H4V8z"/>'; // Web Asset
+            els.btnToggleUI.title = "Hide UI Panel";
+        }
+    }
 }
 
 function populateDatasetSelect() {

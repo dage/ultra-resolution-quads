@@ -15,6 +15,14 @@ const VIEW_UTILS_PATH = path.join(PROJECT_ROOT, 'shared', 'view_utils.js');
 // Mock DOM API
 const document = {
     activeElement: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    fullscreenElement: null,
+    exitFullscreen: () => Promise.resolve(),
+    documentElement: {
+        requestFullscreen: () => Promise.resolve(),
+        style: {}
+    },
     body: {
         classList: {
             add: () => {},
@@ -24,6 +32,7 @@ const document = {
     },
     getElementById: (id) => ({
         addEventListener: () => {},
+        querySelector: () => ({ innerHTML: '' }),
         style: {},
         value: 0,
         textContent: '',

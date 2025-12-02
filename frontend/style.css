@@ -172,3 +172,71 @@ button:hover {
     background: #444;
     border-color: #777;
 }
+
+/* Top Right Controls */
+#top-right-controls {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    gap: 10px;
+    z-index: 1000;
+}
+
+/* Bottom Right Controls */
+#bottom-right-controls {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    gap: 10px;
+    z-index: 1000;
+}
+
+.control-btn {
+    width: 40px;
+    height: 40px;
+    background: rgba(0, 0, 0, 0.5);
+    border: none;
+    border-radius: 4px;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    margin-top: 0;
+    color: white;
+}
+
+.control-btn:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.control-btn svg {
+    width: 24px;
+    height: 24px;
+    fill: white;
+}
+
+#ui {
+    width: 300px;
+    min-width: 0; /* Allow shrinking below content size */
+    background-color: #222;
+    border-left: 1px solid #444;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+    z-index: 100;
+    transition: width 0.1s ease-in-out, padding 0.1s ease-in-out, border-left 0.1s ease-in-out;
+}
+
+/* UI Collapse State */
+#app.ui-collapsed #ui {
+    width: 0;
+    padding: 0;
+    border-left: none;
+    overflow-y: hidden;
+}
