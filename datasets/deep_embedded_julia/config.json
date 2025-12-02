@@ -1,0 +1,27 @@
+{
+  "id": "deep_embedded_julia",
+  "name": "Deep Embedded Julia",
+  "description": "Deep zoom perturbation Julia set.",
+  "tile_size": 512,
+  "renderer": "datasets.deep_embedded_julia.render:JuliaDeepRenderer",
+  "supports_multithreading": true,
+  "renderer_args": {
+      "fractal_type": "mandelbrot",
+      "x": "-1.768667862837488812627419470",
+      "y": "0.001645580546820209430325900",
+      "dx": "12.e-22",
+      "max_iter": 10000,
+      "precision": 30,
+      "shade_kind": "standard",
+      "colormap": "classic",
+      "base_layer": "distance_estimation",
+      "zmin": 9.015,
+      "zmax": 9.025,
+      "lighting_config": {"k_diffuse": 0.4, "k_specular": 10.0},
+      "supersampling": "2x2"
+  },
+  "render_config": {
+    "mode": "full",
+    "max_level": 6
+  }
+}

@@ -16,9 +16,9 @@
       "description": "Power Tower fractal (Tetration) test dataset."
     },
     {
-      "id": "perp_bs_test",
-      "name": "Perpendicular BS Test",
-      "description": "Deep zoom test of Perpendicular Burning Ship."
+      "id": "deep_embedded_julia",
+      "name": "Deep Embedded Julia",
+      "description": ""
     }
   ]
 }
