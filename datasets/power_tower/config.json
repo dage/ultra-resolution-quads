@@ -10,9 +10,9 @@
       "root_dx": 0.0005,
       "supersampling": null
   },
-  "supports_multithreading": false,
+  "supports_multithreading": true,
   "render_config": {
     "mode": "full",
-    "max_level": 3
+    "max_level": 5
   }
 }
