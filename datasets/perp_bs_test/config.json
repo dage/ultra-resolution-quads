@@ -2,7 +2,7 @@
   "id": "perp_bs_test",
   "name": "Burning Ship Deep Test",
   "description": "Deep zoom test (e-101) of Burning Ship (Gallery Item 4).",
-  "tile_size": 128,
+  "tile_size": 1024,
   "renderer": "datasets.perp_bs_test.render:BSDeepRenderer",
   "supports_multithreading": false,
   "renderer_args": {
