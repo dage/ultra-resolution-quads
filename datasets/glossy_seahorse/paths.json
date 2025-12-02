@@ -1,7 +1,7 @@
 {
   "path": {
-    "id": "power_tower_zoom",
-    "name": "Power Tower Test Zoom",
+    "id": "glossy_seahorse_zoom",
+    "name": "Glossy Seahorse Test Zoom (Power Tower Path)",
     "keyframes": [
       { 
         "camera": { 
@@ -18,7 +18,7 @@
           "globalX": 0.35, 
           "globalY": 0.43, 
           "rotation": 6.28318,
-          "note": "End: Center of Top-Right Quadrant (Tile 1,0)" 
+          "note": "End: Zoom Target" 
         } 
       }
     ]

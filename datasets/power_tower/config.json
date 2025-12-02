@@ -2,13 +2,13 @@
   "id": "power_tower",
   "name": "Power Tower",
   "description": "Power Tower fractal (Tetration) test dataset.",
-  "tile_size": 512,
+  "tile_size": 1024,
   "renderer": "datasets.power_tower.render:PowerTowerRenderer",
   "renderer_args": {
       "root_x": 1.40735,
       "root_y": -3.36277,
       "root_dx": 0.0005,
-      "supersampling": null
+      "supersampling": "2x2"
   },
   "supports_multithreading": true,
   "render_config": {

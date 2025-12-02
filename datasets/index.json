@@ -16,6 +16,11 @@
       "description": "Power Tower fractal (Tetration) test dataset."
     },
     {
+      "id": "glossy_seahorse",
+      "name": "Glossy Seahorse",
+      "description": "Mandelbrot with 3D lighting (Glossy Seahorse)."
+    },
+    {
       "id": "deep_embedded_julia",
       "name": "Deep Embedded Julia",
       "description": ""
