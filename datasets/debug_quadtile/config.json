@@ -2,5 +2,9 @@
   "id": "debug_quadtile",
   "name": "Debug Quadtile",
   "tile_size": 512,
-  "renderer": "datasets.debug_quadtile.render:DebugQuadtileRenderer"
+  "renderer": "datasets.debug_quadtile.render:DebugQuadtileRenderer",
+  "render_config": {
+    "mode": "full",
+    "max_level": 6
+  }
 }

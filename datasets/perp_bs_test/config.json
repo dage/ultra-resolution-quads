@@ -17,6 +17,9 @@
       },
       "supersampling": null
   },
-  "supports_multithreading": false
+  "render_config": {
+    "mode": "full",
+    "max_level": 2
+  }
 }
       

@@ -273,8 +273,8 @@ def main():
     parser = argparse.ArgumentParser(description="Render tiles for Ultra-Resolution Quads datasets")
     parser.add_argument('--dataset', required=False, help='Dataset ID (e.g. debug_quadtile, mandelbrot_single_precision). If not provided, all datasets will be rendered.')
     parser.add_argument('--renderer_args', default="{}", help='JSON dict of kwargs passed to the renderer constructor')
-    parser.add_argument('--max_level', type=int, default=4, help='Max level to generate for "full" mode')
-    parser.add_argument('--mode', choices=['full', 'path'], default='path', help='Generation mode')
+    parser.add_argument('--max_level', type=int, default=None, help='Max level to generate for "full" mode (defaults to config or 4)')
+    parser.add_argument('--mode', choices=['full', 'path'], default=None, help='Generation mode (defaults to config or "path")')
     parser.add_argument('--rebuild', action='store_true', help='Delete existing tiles for the dataset(s) before rendering')
     
     args = parser.parse_args()
@@ -313,6 +313,17 @@ def main():
             print(f"Skipping dataset '{dataset_id}': renderer not found in config.json")
             continue
 
+        # Determine render configuration (CLI > Config > Default)
+        render_config = dataset_config.get('render_config', {})
+        
+        mode = args.mode
+        if mode is None:
+            mode = render_config.get('mode', 'path')
+            
+        max_level = args.max_level
+        if max_level is None:
+            max_level = render_config.get('max_level', 4)
+
         tile_size = dataset_config.get('tile_size', 512)
         supports_multithreading = dataset_config.get('supports_multithreading', True)
 
@@ -336,18 +347,18 @@ def main():
         print(f"Initializing dataset: {dataset_id}")
         
         path_data = None
-        if args.mode == 'path':
+        if mode == 'path':
             try:
                 path_data = load_path(dataset_id)
             except ValueError as exc:
                 print(f"Skipping dataset '{dataset_id}' in path mode: {exc}")
                 continue
 
-        print(f"Mode: {args.mode}")
-        if args.mode == 'full':
-            print("Generating FULL pyramid (all tiles)...")
+        print(f"Mode: {mode}")
+        if mode == 'full':
+            print(f"Generating FULL pyramid (max_level={max_level})...")
             start_time = time.time()
-            generated, total_tiles, missing = generate_full_pyramid(renderer, dataset_tiles_root, args.max_level, use_multiprocessing=supports_multithreading)
+            generated, total_tiles, missing = generate_full_pyramid(renderer, dataset_tiles_root, max_level, use_multiprocessing=supports_multithreading)
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
             # File size stats
