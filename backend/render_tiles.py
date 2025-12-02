@@ -110,6 +110,11 @@ def _init_renderer_worker(renderer):
     """Initializer for ProcessPool workers; shares the renderer instance via pickling."""
     global _renderer_instance
     _renderer_instance = renderer
+    try:
+        os.nice(10)  # Set a lower priority for worker processes
+    except AttributeError:
+        # os.nice is not available on all operating systems (e.g., Windows)
+        pass
 
 
 def _render_tile(args):
