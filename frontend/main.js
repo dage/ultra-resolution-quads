@@ -112,7 +112,7 @@ async function loadDataset(id) {
 
 function setActivePath(path) {
     const resolved = (typeof CameraPath !== 'undefined' && CameraPath.resolvePathMacros)
-        ? CameraPath.resolvePathMacros(path || {})
+        ? CameraPath.resolvePathMacros(path)
         : (path || null);
 
     state.activePath = resolved;
@@ -452,7 +452,7 @@ function segmentDurationMs(k1, k2) {
 }
 
 function recalculateExperienceTiming() {
-    if (!state.activePath || state.activePath.keyframes.length < 2) {
+    if (!state.activePath || !state.activePath.keyframes || state.activePath.keyframes.length < 2) {
         state.experience.segmentDurations = [];
         state.experience.totalDuration = 0;
         return;
@@ -469,7 +469,7 @@ function recalculateExperienceTiming() {
 }
 
 function updateExperience(now) {
-    if (!state.activePath || state.activePath.keyframes.length < 2) return;
+    if (!state.activePath || !state.activePath.keyframes || state.activePath.keyframes.length < 2) return;
     if (!state.experience.segmentDurations.length || state.experience.totalDuration <= 0) return;
 
     // If active, calculate elapsed from start time
