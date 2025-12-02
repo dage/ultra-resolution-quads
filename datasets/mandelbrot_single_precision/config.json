@@ -2,5 +2,6 @@
   "id": "mandelbrot_single_precision",
   "name": "Mandelbrot Single Precision",
   "tile_size": 1024,
-  "renderer": "datasets.mandelbrot_single_precision.render:MandelbrotDeepZoomRenderer"
+  "renderer": "datasets.mandelbrot_single_precision.render:MandelbrotDeepZoomRenderer",
+  "supports_multithreading": false
 }

@@ -1,0 +1,22 @@
+{
+  "id": "perp_bs_test",
+  "name": "Burning Ship Deep Test",
+  "description": "Deep zoom test (e-101) of Burning Ship (Gallery Item 4).",
+  "tile_size": 128,
+  "renderer": "datasets.perp_bs_test.render:BSDeepRenderer",
+  "supports_multithreading": false,
+  "renderer_args": {
+      "center_x": "0.533551593577038561769721161491702555962775680136595415306315189524970818968817900068355227861158570104764433694",
+      "center_y": "1.26175074578870311547721223871955368990255513054155186351034363459852900933566891849764050954410207620093433856",
+      "width_dx": "7.072814368784043e-101",
+      "precision": 150,
+      "max_iter": 5000,
+      "skew_params": {
+          "skew_00": 1.3141410612942215, "skew_01": 0.8651590600810832,
+          "skew_10": 0.6372176654581702, "skew_11": 1.1804627997751416
+      },
+      "supersampling": null
+  },
+  "supports_multithreading": false
+}
+      

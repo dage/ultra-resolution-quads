@@ -9,6 +9,16 @@
       "id": "mandelbrot_single_precision",
       "name": "Mandelbrot GPU Single Precision",
       "description": ""
+    },
+    {
+      "id": "power_tower",
+      "name": "Power Tower",
+      "description": "Power Tower fractal (Tetration) test dataset."
+    },
+    {
+      "id": "perp_bs_test",
+      "name": "Perpendicular BS Test",
+      "description": "Deep zoom test of Perpendicular Burning Ship."
     }
   ]
 }

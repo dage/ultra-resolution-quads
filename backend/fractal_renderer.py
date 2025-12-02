@@ -1,12 +1,30 @@
 import os
+import sys
 import shutil
 import numpy as np
 from typing import Union, Optional, List, Dict, Any, Literal
 
 # Work around numba caching issues on some platforms
-os.environ.setdefault("NUMBA_DISABLE_CACHING", "1")
+# We must configure Numba BEFORE importing fractalshades
+os.environ["NUMBA_DISABLE_CACHING"] = "1"
+
+try:
+    import numba
+    # CRITICAL FIX: fractalshades uses @njit(cache=True) on dynamically generated functions 
+    # for Deep Zoom. These functions cannot be pickled (ReferenceError), causing a crash 
+    # whenever Numba attempts to save them to the cache. 
+    # We must intercept numba.njit and force cache=False to prevent this.
+    _original_njit = numba.njit
+    def _no_cache_njit(*args, **kwargs):
+        if 'cache' in kwargs:
+            kwargs['cache'] = False
+        return _original_njit(*args, **kwargs)
+    numba.njit = _no_cache_njit
+except ImportError:
+    pass
 
 import fractalshades as fs
+
 import fractalshades.models as fsm
 import fractalshades.colors as fscolors
 import fractalshades.projection
@@ -241,11 +259,20 @@ class FractalShadesRenderer:
             
         calc_kwargs.update(c_args)
         
+        # FIX: Perturbation models often don't support epsilon_stationnary or interior_detect
+        # Remove them proactively if we are using perturbation to avoid TypeErrors
+        if use_perturbation:
+            if "epsilon_stationnary" in calc_kwargs:
+                del calc_kwargs["epsilon_stationnary"]
+            if "interior_detect" in calc_kwargs:
+                del calc_kwargs["interior_detect"]
+
         # Run Calc
         if hasattr(fractal, "calc_std_div"):
             try:
                 fractal.calc_std_div(**calc_kwargs)
-            except TypeError:
+            except TypeError as e:
+                print(f"Warning: calc_std_div failed with {e}. Retrying with minimal args.")
                 # Retry without unsupported args if necessary (simple fallback)
                 if "interior_detect" in calc_kwargs:
                     del calc_kwargs["interior_detect"]

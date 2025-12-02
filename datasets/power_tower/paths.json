@@ -1,0 +1,26 @@
+{
+  "path": {
+    "id": "power_tower_zoom",
+    "name": "Power Tower Test Zoom",
+    "keyframes": [
+      { 
+        "camera": { 
+          "globalLevel": 0, 
+          "globalX": 0.5, 
+          "globalY": 0.5, 
+          "rotation": 0, 
+          "note": "Start: Root View" 
+        } 
+      },
+      { 
+        "camera": { 
+          "globalLevel": 1, 
+          "globalX": 0.75, 
+          "globalY": 0.25, 
+          "rotation": 0, 
+          "note": "End: Center of Top-Right Quadrant (Tile 1,0)" 
+        } 
+      }
+    ]
+  }
+}

@@ -107,7 +107,7 @@ def _render_tile(args):
     img.save(img_path)
     return True
 
-def render_tasks(renderer, tasks):
+def render_tasks(renderer, tasks, use_multiprocessing=True):
     """Render a list of (level, x, y, base_path) tasks, skipping those already present."""
     if not tasks:
         print("No new tiles needed.")
@@ -115,10 +115,14 @@ def render_tasks(renderer, tasks):
 
     generated = 0
     
-    use_multiprocessing = True
-    if hasattr(renderer, 'supports_multithreading') and not renderer.supports_multithreading():
+    # Fallback check if method exists on renderer (legacy)
+    if use_multiprocessing and hasattr(renderer, 'supports_multithreading') and not renderer.supports_multithreading():
         use_multiprocessing = False
         print("Renderer does not support multithreading. Switching to single-process mode.")
+    
+    # Explicit config override message
+    if not use_multiprocessing and hasattr(renderer, 'supports_multithreading') and renderer.supports_multithreading():
+         print("Multithreading disabled by configuration.")
 
     if use_multiprocessing:
         print(f"Rendering {len(tasks)} missing tiles with 8 workers...")
@@ -202,7 +206,7 @@ def load_path(dataset_id: str):
         raise ValueError(f"paths.json for dataset '{dataset_id}' must contain an object under the 'path' key.")
     return path_obj
 
-def generate_full_pyramid(renderer, base_path, max_level):
+def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=True):
     tasks = []
     total_tiles = 0
     for level in range(max_level + 1):
@@ -222,10 +226,10 @@ def generate_full_pyramid(renderer, base_path, max_level):
         print(f"Full mode: {len(tasks)} / {total_tiles} tiles missing; rendering now...")
     else:
         print("Full mode: all tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks)
+    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing)
     return generated, total_tiles, len(tasks)
 
-def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000):
+def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000, use_multiprocessing=True):
     if not path:
         print(f"No path defined for {dataset_id}; skipping path-based generation.")
         return 0
@@ -261,7 +265,7 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000)
         print(f"Path mode: {len(tasks)} new tiles to render (of {len(required_tiles)} unique).")
     else:
         print("Path mode: all required tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks)
+    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing)
     return generated
 
 
@@ -310,6 +314,7 @@ def main():
             continue
 
         tile_size = dataset_config.get('tile_size', 512)
+        supports_multithreading = dataset_config.get('supports_multithreading', True)
 
         config_renderer_args = dataset_config.get('renderer_args') if isinstance(dataset_config, dict) else {}
         merged_renderer_kwargs = {}
@@ -342,7 +347,7 @@ def main():
         if args.mode == 'full':
             print("Generating FULL pyramid (all tiles)...")
             start_time = time.time()
-            generated, total_tiles, missing = generate_full_pyramid(renderer, dataset_tiles_root, args.max_level)
+            generated, total_tiles, missing = generate_full_pyramid(renderer, dataset_tiles_root, args.max_level, use_multiprocessing=supports_multithreading)
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
             # File size stats
@@ -359,7 +364,7 @@ def main():
         else:
             print("Generating tiles along PATH...")
             start_time = time.time()
-            generated = generate_tiles_along_path(renderer, dataset_tiles_root, dataset_id, path_data)
+            generated = generate_tiles_along_path(renderer, dataset_tiles_root, dataset_id, path_data, use_multiprocessing=supports_multithreading)
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
             # File size stats
