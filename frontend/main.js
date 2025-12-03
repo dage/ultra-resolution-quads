@@ -454,8 +454,9 @@ function forceSeek(elapsedTime) {
 }
 
 function updateViewSize() {
-    const rect = els.viewer.getBoundingClientRect();
-    state.viewSize = { width: rect.width, height: rect.height };
+    // Calibrate viewport based on the full window size (as if menu is collapsed)
+    // to ensure rotation/zoom covers the corners and centering is consistent with the screen.
+    state.viewSize = { width: window.innerWidth, height: window.innerHeight };
 }
 
 // Camera Logic

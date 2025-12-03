@@ -66,7 +66,9 @@ const document = {
 const window = {
     addEventListener: () => {},
     requestAnimationFrame: (cb) => {}, 
-    location: { search: '' }
+    location: { search: '' },
+    innerWidth: 1024,
+    innerHeight: 768
 };
 
 const Image = class {
