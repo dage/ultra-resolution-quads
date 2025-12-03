@@ -109,6 +109,7 @@ const sandbox = {
     Math: Math,
     setTimeout: setTimeout,
     Map: Map, 
+    URLSearchParams: URLSearchParams,
     performance: { now: () => 0 },
     BASE_DATA_URI: '..'
 };

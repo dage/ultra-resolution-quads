@@ -499,10 +499,10 @@ function updateUI() {
     if (!els.vals.level) return;
     const lvl = Math.floor(state.camera.globalLevel);
     const zoomOffset = state.camera.globalLevel - lvl;
-    els.vals.level.textContent = lvl + " (+ " + zoomOffset.toFixed(2) + ")";
-    if (els.vals.x) els.vals.x.textContent = state.camera.x.toFixed(6);
-    if (els.vals.y) els.vals.y.textContent = state.camera.y.toFixed(6);
-    if (els.vals.rotation) els.vals.rotation.textContent = (state.camera.rotation || 0).toFixed(2);
+    els.vals.level.textContent = lvl + " (+ " + zoomOffset.toFixed(17) + ")";
+    if (els.vals.x) els.vals.x.textContent = state.camera.x.toFixed(17);
+    if (els.vals.y) els.vals.y.textContent = state.camera.y.toFixed(17);
+    if (els.vals.rotation) els.vals.rotation.textContent = (state.camera.rotation || 0).toFixed(17);
     
     // Only update inputs if they are not focused to allow editing without overwrite
     if (document.activeElement !== els.inputs.level) els.inputs.level.value = lvl;
