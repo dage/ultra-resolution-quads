@@ -60,7 +60,7 @@ class GlossySeahorseRenderer:
             },
             supersampling=self.supersampling,
             interior_detect=False,
-            filename=f"tile_{level}_{tile_x}_{tile_y}.png",
+            filename=f"tile_{level}_{tile_x}_{tile_y}.webp",
             return_pillow_image=True,
             batch_prefix=f"gs_{level}_{tile_x}_{tile_y}" # Unique prefix for thread safety if needed
         )

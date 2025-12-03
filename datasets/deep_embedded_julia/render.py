@@ -59,7 +59,7 @@ class JuliaDeepRenderer:
         render_params["y"] = f"{center_im:.{self.precision}f}"
         render_params["dx"] = f"{current_dx:.{self.precision}e}"
         render_params["nx"] = self.tile_size
-        render_params["filename"] = f"tile_{level}_{tile_x}_{tile_y}.png"
+        render_params["filename"] = f"tile_{level}_{tile_x}_{tile_y}.webp"
         render_params["return_pillow_image"] = True
         render_params["batch_prefix"] = f"juliad_{level}_{tile_x}_{tile_y}"
         

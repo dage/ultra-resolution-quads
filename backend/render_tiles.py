@@ -11,6 +11,11 @@ from typing import Any, Dict
 
 from PIL import Image
 
+TILE_EXTENSION = ".webp"
+TILE_FORMAT = "WEBP"
+# Match the "medium" WebP settings used in experiments/compare_image_quality.py
+TILE_WEBP_PARAMS = {"quality": 85, "method": 6}
+
 # Add project root to path to find renderers
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -22,6 +27,9 @@ _renderer_instance = None
 
 def ensure_dirs(path):
     os.makedirs(path, exist_ok=True)
+
+def make_tile_path(base_path, level, x, y):
+    return os.path.join(base_path, str(level), str(x), f"{y}{TILE_EXTENSION}")
 
 def parse_tiles_arg(tile_str):
     """
@@ -83,7 +91,7 @@ def check_and_clean_if_needed(dataset_dir, target_tile_size):
                 x_dir = os.path.join(level_dir, x_name)
                 if os.path.isdir(x_dir):
                     for f in os.listdir(x_dir):
-                        if f.endswith('.png'):
+                        if f.endswith(TILE_EXTENSION):
                             found_tile = os.path.join(x_dir, f)
                             break
                 if found_tile: break
@@ -121,9 +129,8 @@ def _render_tile(args):
     t0 = time.time()
     level, x, y, base_path = args
 
-    level_path = os.path.join(base_path, str(level), str(x))
-    ensure_dirs(level_path)
-    img_path = os.path.join(level_path, f"{y}.png")
+    img_path = make_tile_path(base_path, level, x, y)
+    ensure_dirs(os.path.dirname(img_path))
 
     if os.path.exists(img_path):
         return False, 0.0
@@ -132,7 +139,7 @@ def _render_tile(args):
         raise RuntimeError("Renderer instance not initialized in worker")
 
     img = _renderer_instance.render(level, x, y)
-    img.save(img_path)
+    img.save(img_path, format=TILE_FORMAT, **TILE_WEBP_PARAMS)
     return True, time.time() - t0
 
 def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
@@ -268,7 +275,7 @@ def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=Tr
             x_path = os.path.join(level_path, str(x))
             ensure_dirs(x_path)
             for y in range(num_tiles):
-                img_path = os.path.join(x_path, f"{y}.png")
+                img_path = make_tile_path(base_path, level, x, y)
                 if not os.path.exists(img_path):
                     tasks.append((level, x, y, base_path))
     tasks.sort(key=lambda t: (t[0], t[1], t[2]))
@@ -289,7 +296,7 @@ def generate_selected_tiles(renderer, base_path, tiles, use_multiprocessing=True
         level_path = os.path.join(base_path, str(level))
         x_path = os.path.join(level_path, str(x))
         ensure_dirs(x_path)
-        img_path = os.path.join(x_path, f"{y}.png")
+        img_path = make_tile_path(base_path, level, x, y)
         if not os.path.exists(img_path):
             tasks.append((level, x, y, base_path))
     tasks.sort(key=lambda t: (t[0], t[1], t[2]))
@@ -327,7 +334,7 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000,
     
     tasks = []
     for (level, x, y) in required_tiles:
-        img_path = os.path.join(base_path, str(level), str(x), f"{y}.png")
+        img_path = make_tile_path(base_path, level, x, y)
         if not os.path.exists(img_path):
             tasks.append((level, x, y, base_path))
 
@@ -460,7 +467,7 @@ def main():
         total_bytes = 0
         for root, _, files in os.walk(dataset_tiles_root):
             for fname in files:
-                if fname.lower().endswith('.png'):
+                if fname.lower().endswith(TILE_EXTENSION):
                     file_count += 1
                     total_bytes += os.path.getsize(os.path.join(root, fname))
         avg_size = total_bytes / file_count if file_count else 0.0

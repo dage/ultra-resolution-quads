@@ -3,21 +3,20 @@
 Image Format Quality Comparison Tool for Ultra-Resolution Quads
 
 Generates JPEG, WebP, and AVIF versions of a single tile at multiple quality
-levels, creates an interactive HTML viewer with zoom capability for artifact
-inspection, and measures decode performance.
+levels using Pillow, creates an interactive HTML viewer with zoom capability for
+artifact inspection, and measures decode performance.
 
 Usage:
-    python experiments/compare_image_quality.py --dataset mandelbrot_deep --tile 5/12/8
+    python experiments/compare_image_quality.py --dataset power_tower --tile 5/12/8
 """
 
 import argparse
 import json
-import os
 import shutil
-import subprocess
-import sys
 from pathlib import Path
 from typing import Optional, Tuple
+
+from PIL import Image, UnidentifiedImageError, features
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DATASETS_DIR = PROJECT_ROOT / "datasets"
@@ -67,8 +66,6 @@ def find_tile(dataset_id: str, tile_spec: Optional[str] = None) -> Path:
 
 def get_image_info(image_path: Path, fallback_dimensions: Tuple[int, int] = None) -> dict:
     """Get image dimensions and file size."""
-    from PIL import Image, UnidentifiedImageError
-    
     width, height = 0, 0
     try:
         with Image.open(image_path) as img:
@@ -93,62 +90,61 @@ def get_image_info(image_path: Path, fallback_dimensions: Tuple[int, int] = None
 
 
 def convert_to_jpeg(input_path: Path, output_path: Path, quality: int):
-    """Convert to JPEG using ffmpeg."""
+    """Convert to JPEG using Pillow."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-q:v", str(quality),  # JPEG quality 2-31 (lower = better)
-        str(output_path)
-    ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to convert to JPEG: {result.stderr}")
+    try:
+        with Image.open(input_path) as img:
+            # JPEG does not support alpha; strip it if present.
+            if img.mode in ("RGBA", "LA", "P"):
+                img = img.convert("RGB")
+            img.save(output_path, format="JPEG", quality=quality, optimize=True, progressive=True)
+    except OSError as exc:
+        raise RuntimeError(f"Failed to convert to JPEG: {exc}") from exc
 
 
 def convert_to_webp(input_path: Path, output_path: Path, quality: int):
-    """Convert to WebP using ffmpeg."""
+    """Convert to WebP using Pillow."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-c:v", "libwebp",
-        "-lossless", "0",
-        "-q:v", str(quality),  # WebP quality 0-100
-        "-compression_level", "4",
-        "-preset", "default",
-        str(output_path)
-    ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Warning: WebP encoding failed (libwebp may not be compiled in ffmpeg)")
+    if not features.check("webp"):
+        print("Warning: WebP encoding not supported by this Pillow build")
         return False
-    return True
+    
+    try:
+        with Image.open(input_path) as img:
+            img.save(
+                output_path,
+                format="WEBP",
+                quality=quality,
+                method=6,  # 0-6, slower gives better compression
+            )
+        return True
+    except OSError as exc:
+        print(f"Warning: WebP encoding failed: {exc}")
+        return False
 
 
 def convert_to_avif(input_path: Path, output_path: Path, crf: int):
-    """Convert to AVIF using ffmpeg."""
+    """Convert to AVIF using Pillow."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-c:v", "libaom-av1",
-        "-still-picture", "1",
-        "-crf", str(crf),  # AVIF crf 0-63 (lower = better)
-        "-cpu-used", "4",
-        str(output_path)
-    ]
+    try:
+        avif_supported = features.get_supported().get("avif", False)
+    except Exception:
+        avif_supported = False
     
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Warning: AVIF encoding failed (may not be compiled in ffmpeg)")
+    if not avif_supported:
+        print("Warning: AVIF encoding not supported by this Pillow build")
         return False
-    return True
+    
+    try:
+        with Image.open(input_path) as img:
+            img.save(output_path, format="AVIF", quality=crf)
+        return True
+    except OSError as exc:
+        print(f"Warning: AVIF encoding failed: {exc}")
+        return False
 
 
 def generate_comparison_html(
@@ -507,9 +503,19 @@ def generate_comparison_html(
         let isPanning = false;
         let panStart = {{ x: 0, y: 0 }};
         let benchmarkResults = {{}};
+        let fileProtocolBlocked = false;
         
         // Initialize page
         window.addEventListener('DOMContentLoaded', () => {{
+            // Disable benchmark when opened via file:// because fetch is blocked
+            if (window.location.protocol === 'file:') {{
+                fileProtocolBlocked = true;
+                const btn = document.getElementById('benchmarkBtn');
+                const status = document.getElementById('benchmarkStatus');
+                btn.disabled = true;
+                status.textContent = 'Benchmark disabled when opened via file:// (CORS blocks fetch). Please open through a local server, e.g. python -m http.server 8000 from repo root.';
+            }}
+            
             renderImageGrid();
             setupPanHandlers();
             document.getElementById('comparisonMode').addEventListener('change', renderImageGrid);
@@ -653,6 +659,11 @@ def generate_comparison_html(
             const btn = document.getElementById('benchmarkBtn');
             const status = document.getElementById('benchmarkStatus');
             
+            if (fileProtocolBlocked) {{
+                status.textContent = 'Benchmark disabled when opened via file://. Serve over http://localhost instead.';
+                return;
+            }}
+            
             btn.disabled = true;
             status.textContent = 'Running performance tests...';
             
@@ -779,7 +790,7 @@ def main():
     parser.add_argument(
         "--dataset",
         required=True,
-        help="Dataset ID (e.g., mandelbrot_deep)"
+        help="Dataset ID (e.g., power_tower)"
     )
     parser.add_argument(
         "--tile",
@@ -822,16 +833,16 @@ def main():
     
     # JPEG variants
     jpeg_qualities = [
-        (60, "Low", 8),
-        (80, "Medium", 4),
-        (95, "High", 2)
+        (60, "Low"),
+        (80, "Medium"),
+        (95, "High")
     ]
     
     print("\nGenerating JPEG variants...")
-    for web_quality, label, ffmpeg_q in jpeg_qualities:
+    for web_quality, label in jpeg_qualities:
         filename = f"jpeg_q{web_quality}.jpg"
         output_path = output_dir / filename
-        convert_to_jpeg(tile_path, output_path, ffmpeg_q)
+        convert_to_jpeg(tile_path, output_path, web_quality)
         
         info = get_image_info(output_path, (original_info['width'], original_info['height']))
         variants.append({
@@ -839,6 +850,7 @@ def main():
             "format": "JPEG",
             "quality": label,
             "filename": filename,
+            "label": f"JPEG {label}",
             "info": info
         })
         
@@ -865,6 +877,7 @@ def main():
                 "format": "WebP",
                 "quality": label,
                 "filename": filename,
+                "label": f"WebP {label}",
                 "info": info
             })
             
@@ -895,6 +908,7 @@ def main():
                 "format": "AVIF",
                 "quality": label,
                 "filename": filename,
+                "label": f"AVIF {label}",
                 "info": info
             })
             
@@ -906,7 +920,7 @@ def main():
             break
     
     if not avif_available:
-        print("\nNote: AVIF support requires ffmpeg compiled with libaom-av1")
+        print("\nNote: AVIF support requires Pillow built with AVIF encoding support")
     
     print()
     

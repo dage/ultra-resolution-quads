@@ -82,7 +82,7 @@ def main():
         if tile_key in checked_tiles:
             continue
         
-        path = os.path.join(tiles_path, str(level), str(x), f"{y}.png")
+        path = os.path.join(tiles_path, str(level), str(x), f"{y}.webp")
         
         if not os.path.exists(path):
             missing_tiles.add(tile_key)
