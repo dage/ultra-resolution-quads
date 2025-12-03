@@ -7,6 +7,9 @@ const state = {
     datasets: [],
     activeDatasetId: null,
     config: null,
+    // Telemetry Data
+    telemetry: [],
+    autoplayPending: false,
     camera: {
         globalLevel: 0,
         x: 0.5,
@@ -29,6 +32,9 @@ const state = {
         totalDuration: 0
     }
 };
+
+// Expose state for debugging and automation
+window.appState = state;
 
 // DOM Elements
 const els = {
@@ -70,8 +76,28 @@ async function init() {
     state.datasets = data.datasets;
     
     populateDatasetSelect();
-    if (state.datasets.length > 0) {
-        await loadDataset(state.datasets[0].id);
+
+    // Parse Query Parameters
+    const params = new URLSearchParams(window.location.search);
+    const datasetParam = params.get('dataset');
+    const autoplayParam = params.get('autoplay');
+
+    let targetDatasetId = state.datasets.length > 0 ? state.datasets[0].id : null;
+
+    if (datasetParam) {
+        const exists = state.datasets.find(d => d.id === datasetParam);
+        if (exists) {
+            targetDatasetId = datasetParam;
+        }
+    }
+
+    if (targetDatasetId) {
+        await loadDataset(targetDatasetId);
+        if (els.datasetSelect) els.datasetSelect.value = targetDatasetId;
+    }
+
+    if (autoplayParam === 'true') {
+        state.autoplayPending = true;
     }
     
     setupEventListeners();
@@ -516,11 +542,10 @@ function segmentDurationMs(k1, k2) {
     // Calculate Visual Distance between two camera states
     const l1 = k1.globalLevel;
     const l2 = k2.globalLevel;
-    const l_avg = (l1 + l2) / 2;
-    
-    // Scale factor at average level to convert Global Delta to Visual Delta
-    // 1 Global Unit = 2^L_avg Visual Units (Screen Widths)
-    const scale = Math.pow(2, l_avg);
+    // Use the minimum level for scale to approximate the visual distance 
+    // of the pan, assuming an optimal "Zoom then Pan" or "Pan then Zoom" 
+    // trajectory (hyperbolic) which performs lateral movement at the coarsest level.
+    const scale = Math.pow(2, Math.min(l1, l2));
 
     const g1 = cameraToGlobal(k1);
     const g2 = cameraToGlobal(k2);
@@ -598,6 +623,7 @@ function updateExperienceWithElapsed(elapsed) {
 
 // Rendering
 const activeTileElements = new Map(); // Key: "level|x|y", Value: DOM Element
+window.activeTileElements = activeTileElements; // Expose for telemetry
 
 function getTileImage(datasetId, level, x, y) {
     // We just return a new image element source, but we don't manage caching logic here 
@@ -605,7 +631,7 @@ function getTileImage(datasetId, level, x, y) {
     // But to avoid re-downloading if we just removed it, we can keep the src string or let browser cache handle it.
     // Browser cache is usually sufficient for 'src'.
     const img = document.createElement('img');
-    img.src = `${BASE_DATA_URI}/datasets/${datasetId}/${level}/${x}/${y}.png`;
+        img.src = `${BASE_DATA_URI}/datasets/${datasetId}/${level}/${x}/${y}.webp`;
     img.className = 'tile';
     img.style.width = `${LOGICAL_TILE_SIZE}px`;
     img.style.height = `${LOGICAL_TILE_SIZE}px`;
@@ -682,8 +708,45 @@ function updateLayer(level, opacity, targetTiles) {
     });
 }
 
+function areTilesReady() {
+    // We want at least some tiles to be present to consider it 'ready'
+    if (activeTileElements.size === 0) return false;
+    for (const el of activeTileElements.values()) {
+        if (!el.complete || el.naturalWidth === 0) return false;
+    }
+    return true;
+}
+
 function renderLoop() {
-    updateExperience(performance.now());
+    const now = performance.now();
+
+    // External Hook for Telemetry/Scripting
+    if (typeof window.externalLoopHook === 'function') {
+        window.externalLoopHook(state, now);
+    }
+
+    // Autoplay Logic
+    if (state.autoplayPending) {
+        if (areTilesReady()) {
+            state.autoplayPending = false;
+            console.log("Autoplay: Tiles ready. Starting playback.");
+            
+            if (state.activePath) {
+                // Trigger Play
+                state.experience.currentElapsed = 0;
+                // Reset start time so it starts exactly now
+                state.experience.startTime = now;
+                state.experience.active = true;
+                
+                if (els.btns.playPause) els.btns.playPause.textContent = '⏸';
+                updateInputAvailability();
+            } else {
+                console.warn("Autoplay: No active path found.");
+            }
+        }
+    }
+
+    updateExperience(now);
     
     // Apply global rotation
     if (els.layers) {

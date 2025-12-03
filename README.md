@@ -66,7 +66,7 @@ The images will be saved to `artifacts/gallery_v2/`.
     
     *Option B: Deep Zoom Fractal (Computationally Intensive)*
     ```bash
-    python backend/generate_dataset.py --dataset mandelbrot_deep --renderer mandelbrot --max_level 15 --mode path
+    python backend/generate_dataset.py --dataset power_tower --renderer mandelbrot --max_level 15 --mode path
     ```
 
 3.  **Start the Viewer:**
@@ -74,6 +74,35 @@ The images will be saved to `artifacts/gallery_v2/`.
     python -m http.server 8000
     ```
     Open `http://localhost:8000/frontend/index.html` to explore.
+
+## Telemetry & Automation
+The viewer includes features for automated testing and performance profiling.
+
+### URL Parameters
+*   `dataset`: Automatically load a specific dataset ID on startup.
+*   `autoplay`: If `true`, automatically starts the camera path once the initial tiles are loaded.
+    *   *Example:* `http://localhost:8000/frontend/index.html?dataset=glossy_seahorse&autoplay=true`
+
+### Script Injection Hooks
+External scripts (e.g., Playwright/Selenium) can interface with the render loop:
+
+*   `window.appState`: Access the full application state (camera position, config, etc.).
+*   `window.activeTileElements`: Access the Map of currently rendered DOM elements to check load status.
+*   `window.externalLoopHook(state, timestamp)`: Define this function to execute custom logic on every render frame.
+
+### Running Experiments
+We provide a generic Python runner to automate experiments using these hooks.
+
+**Usage:**
+1.  Create a JavaScript file (e.g., `experiments/my_hook.js`) defining `window.externalLoopHook` and pushing data to `window.telemetryData`.
+2.  Run the experiment:
+    ```bash
+    python scripts/run_browser_experiment.py \
+        --dataset <dataset_id> \
+        --hook experiments/my_hook.js \
+        --output artifacts/my_results.json
+    ```
+3.  The runner will launch the browser, inject your hook, autoplay the dataset's path, and save the collected `window.telemetryData` to the JSON output file.
 
 ## 📖 Documentation
 
