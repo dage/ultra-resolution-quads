@@ -63,7 +63,7 @@ def analyze_frames(timestamps_file):
         sorted_drop_indices = dropped_indices[np.argsort(drops)][::-1]
         
         for i in sorted_drop_indices[:5]: # Show top 5
-            t_occurrence = timestamps[i] - timestamps[0]
+            t_occurrence = timestamps[i+1] - timestamps[0]
             print(f"  - {deltas[i]:.2f} ms at {t_occurrence/1000:.2f}s into playback")
     print("-" * 40)
 
