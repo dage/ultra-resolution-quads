@@ -96,18 +96,7 @@ function setupUIControls() {
             if (svg) svg.innerHTML = isFullscreen ? iconExit : iconEnter;
             els.btnFullscreen.title = isFullscreen ? "Exit Fullscreen" : "Toggle Fullscreen";
             
-            // Auto-collapse/expand UI based on fullscreen state
-            if (els.app) {
-                if (isFullscreen) {
-                    els.app.classList.add('ui-collapsed');
-                } else {
-                    els.app.classList.remove('ui-collapsed');
-                }
-                // Update the toggle button icon to reflect the new state
-                updateToggleIcon();
-                // Force resize update since layout changed
-                updateViewSize();
-            }
+
         };
 
         els.btnFullscreen.addEventListener('click', () => {
