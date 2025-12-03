@@ -165,7 +165,6 @@ function setupUIControls() {
         els.btnToggleUI.addEventListener('click', () => {
             els.app.classList.toggle('ui-collapsed');
             updateToggleIcon();
-            updateViewSize();
         });
     }
 }
@@ -410,13 +409,8 @@ function setupEventListeners() {
     // Reset Button
     // els.btnReset.addEventListener('click', resetCamera);
 
-    window.addEventListener('resize', updateViewSize);
-    
     // Initialize input state
     updateInputAvailability();
-    
-    // Ensure view size is updated initially
-    updateViewSize();
 }
 
 function resetCamera() {
@@ -466,12 +460,6 @@ function updateCursor() {
 // Helper to seek when paused
 function forceSeek(elapsedTime) {
     updateExperienceWithElapsed(elapsedTime);
-}
-
-function updateViewSize() {
-    // Calibrate viewport based on the full window size (as if menu is collapsed)
-    // to ensure rotation/zoom covers the corners and centering is consistent with the screen.
-    state.viewSize = { width: window.innerWidth, height: window.innerHeight };
 }
 
 // Camera Logic
@@ -718,6 +706,13 @@ function areTilesReady() {
 }
 
 function renderLoop() {
+    // 1. Update View Size (Robust handling of resize & UI transitions)
+    if (els.viewer) {
+        const rect = els.viewer.getBoundingClientRect();
+        state.viewSize.width = rect.width;
+        state.viewSize.height = rect.height;
+    }
+
     const now = performance.now();
 
     // External Hook for Telemetry/Scripting
