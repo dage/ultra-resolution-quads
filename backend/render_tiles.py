@@ -345,7 +345,7 @@ def generate_selected_tiles(renderer, base_path, tiles, use_multiprocessing=True
     generated = render_tasks(renderer, tasks, dataset_dir=base_path, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
     return generated, len(tiles), len(tasks)
 
-def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000, use_multiprocessing=True, num_workers=8):
+def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000, use_multiprocessing=True, num_workers=8, viewport_width=1920, viewport_height=1080):
     if not path:
         print(f"No path defined for {dataset_id}; skipping path-based generation.")
         return 0
@@ -355,11 +355,14 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000,
         print(f"Path for {dataset_id} has fewer than 2 keyframes; skipping.")
         return 0
 
-    print(f"Generating tiles along path for {dataset_id}...")
+    print(f"Generating tiles along path for {dataset_id} (Viewport: {viewport_width}x{viewport_height})...")
     required_tiles = set()  # (level, x, y)
 
     progresses = [s / steps for s in range(steps + 1)]
-    camera_utils.set_camera_path(path, internal_resolution=max(steps, 2000), tension=0.0)
+    # Note: tile_size here refers to the LOGICAL size used for visibility calculations (usually 512 in frontend).
+    # The physical tile_size from config is used by the renderer.
+    # If we passed the smaller physical size (e.g. 256), the visibility logic would request MORE tiles.
+    camera_utils.set_camera_path(path, internal_resolution=max(steps, 2000), tension=0.0, viewport_width=viewport_width, viewport_height=viewport_height)
     
     # New API returns (cameras, tiles) directly from the shared JS logic
     cams, tiles = camera_utils.cameras_at_progresses(progresses)
@@ -394,6 +397,8 @@ def main():
     parser.add_argument('--rebuild', action='store_true', help='Delete existing tiles for the dataset(s) before rendering')
     parser.add_argument('--tiles', default=None, help="Optional comma-separated list of tiles to render, formatted as level/x/y (e.g., '0/0/0,1/0/1'). When provided, overrides mode/max_level and renders only these tiles.")
     parser.add_argument('--workers', type=int, default=None, help="Optional number of workers for multiprocessing (>=2). Use 1 to force single-process.")
+    parser.add_argument('--viewport_width', type=int, default=1920, help='Viewport width for path visibility calculation (default 1920)')
+    parser.add_argument('--viewport_height', type=int, default=1080, help='Viewport height for path visibility calculation (default 1080)')
     
     args = parser.parse_args()
 
@@ -498,7 +503,11 @@ def main():
         else:
             print("Mode: path")
             start_time = time.time()
-            generated = generate_tiles_along_path(renderer, dataset_tiles_root, dataset_id, path_data, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+            generated = generate_tiles_along_path(
+                renderer, dataset_tiles_root, dataset_id, path_data, 
+                use_multiprocessing=use_multiprocessing, num_workers=num_workers,
+                viewport_width=args.viewport_width, viewport_height=args.viewport_height
+            )
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
             total_tiles = None

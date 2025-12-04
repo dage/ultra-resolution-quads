@@ -2,7 +2,7 @@
   "id": "glossy_seahorse",
   "name": "Glossy Seahorse",
   "description": "Mandelbrot with 3D lighting (Glossy Seahorse), based on Power Tower settings.",
-  "tile_size": 512,
+  "tile_size": 256,
   "renderer": "datasets.glossy_seahorse.render:GlossySeahorseRenderer",
   "renderer_args": {
       "root_x": -0.746223962861,
