@@ -847,7 +847,8 @@ function renderLoop() {
         // We avoid rounding here to prevent per-tile rounding differences
         // from introducing tiny seams between tiles.
         const cached = el._tileCache || {};
-        const nextTransform = `translate(${props.tx}px, ${props.ty}px) scale(${props.scale})`;
+        const overlapScale = props.scale * 1.001;   // quick and easy workaround of sub pixels seams between tiles
+        const nextTransform = `translate(${props.tx}px, ${props.ty}px) scale(${overlapScale})`;
         const nextOpacity = props.opacity.toFixed(3);
         const nextZ = props.zIndex;
 
