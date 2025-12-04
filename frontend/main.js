@@ -613,20 +613,69 @@ function updateExperienceWithElapsed(elapsed) {
 const activeTileElements = new Map(); // Key: "level|x|y", Value: DOM Element
 window.activeTileElements = activeTileElements; // Expose for telemetry
 
+// Worker for image loading
+const imageLoader = new Worker('image_loader.worker.js');
+let nextReqId = 0;
+const pendingRequests = new Map(); // reqId -> key
+
+imageLoader.onmessage = function(e) {
+    const { id, bitmap, error } = e.data;
+    const key = pendingRequests.get(id);
+    pendingRequests.delete(id);
+    
+    if (!key) {
+        if (bitmap) bitmap.close();
+        return;
+    }
+
+    // Check if tile is still active in the DOM/Virtual Map
+    const el = activeTileElements.get(key);
+    if (!el) {
+        // Tile was removed before it loaded
+        if (bitmap) bitmap.close();
+        return;
+    }
+
+    if (bitmap) {
+        // Update canvas internal resolution to match the source image (High DPI support)
+        el.width = bitmap.width;
+        el.height = bitmap.height;
+
+        const ctx = el.getContext('2d');
+        ctx.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        el.isLoaded = true;
+        el.classList.add('loaded');
+    } else {
+        // console.warn('Worker error for tile:', key, error);
+        // Handle error (maybe transparent or error placeholder)
+        el.isLoaded = true; // Mark as processed to avoid hanging 'areTilesReady'
+    }
+};
+
 function getTileImage(datasetId, level, x, y) {
-    // We just return a new image element source, but we don't manage caching logic here 
-    // as complexly as before since we rely on the DOM element persistence.
-    // But to avoid re-downloading if we just removed it, we can keep the src string or let browser cache handle it.
-    // Browser cache is usually sufficient for 'src'.
-    const img = document.createElement('img');
-        img.src = `${BASE_DATA_URI}/datasets/${datasetId}/${level}/${x}/${y}.webp`;
-    img.className = 'tile';
-    img.style.width = `${LOGICAL_TILE_SIZE}px`;
-    img.style.height = `${LOGICAL_TILE_SIZE}px`;
-    img.style.transformOrigin = 'top left';
-    img._tileCache = { transform: '', opacity: '', zIndex: '' }; // Used to avoid redundant style writes
-    img.onerror = () => { img.style.display = 'none'; };
-    return img;
+    const canvas = document.createElement('canvas');
+    canvas.width = LOGICAL_TILE_SIZE;
+    canvas.height = LOGICAL_TILE_SIZE;
+    canvas.className = 'tile';
+    // Initialize with same styles as previous img
+    canvas.style.width = `${LOGICAL_TILE_SIZE}px`;
+    canvas.style.height = `${LOGICAL_TILE_SIZE}px`;
+    canvas.style.transformOrigin = 'top left';
+    canvas._tileCache = { transform: '', opacity: '', zIndex: '' };
+    
+    // Track loading state
+    canvas.isLoaded = false;
+
+    // Dispatch load request
+    const key = `${datasetId}|${level}|${x}|${y}`;
+    const url = `${BASE_DATA_URI}/datasets/${datasetId}/${level}/${x}/${y}.webp`;
+    const id = nextReqId++;
+    
+    pendingRequests.set(id, key);
+    imageLoader.postMessage({ id, url });
+
+    return canvas;
 }
 
 // Simple helper to batch DOM inserts so we touch the tree once per frame.
@@ -700,7 +749,7 @@ function areTilesReady() {
     // We want at least some tiles to be present to consider it 'ready'
     if (activeTileElements.size === 0) return false;
     for (const el of activeTileElements.values()) {
-        if (!el.complete || el.naturalWidth === 0) return false;
+        if (!el.isLoaded) return false;
     }
     return true;
 }

@@ -111,7 +111,13 @@ const sandbox = {
     Map: Map, 
     URLSearchParams: URLSearchParams,
     performance: { now: () => 0 },
-    BASE_DATA_URI: '..'
+    BASE_DATA_URI: '..',
+    Worker: class { 
+        constructor() { 
+            this.postMessage = () => {}; 
+            this.terminate = () => {};
+        } 
+    }
 };
 sandbox.self = sandbox; // Mimic window/self so UMD attaches to sandbox
 
