@@ -15,8 +15,8 @@
       { 
         "camera": { 
           "globalLevel": 50, 
-          "globalX": 0.60996395847129670, 
-          "globalY": 0.41043205573905905, 
+          "globalX": 0.48001, 
+          "globalY": 0.4298, 
           "rotation": 6.28318,
           "note": "End: Zoom Target" 
         } 
