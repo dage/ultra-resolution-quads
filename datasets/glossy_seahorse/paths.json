@@ -5,7 +5,7 @@
     "keyframes": [
       { 
         "camera": { 
-          "globalLevel": 0, 
+          "globalLevel": 1, 
           "globalX": 0.5, 
           "globalY": 0.5, 
           "rotation": 0, 
@@ -14,9 +14,9 @@
       },
       { 
         "camera": { 
-          "globalLevel": 10, 
-          "globalX": 0.35, 
-          "globalY": 0.43, 
+          "globalLevel": 50, 
+          "globalX": 0.60996395847129670, 
+          "globalY": 0.41043205573905905, 
           "rotation": 6.28318,
           "note": "End: Zoom Target" 
         } 
