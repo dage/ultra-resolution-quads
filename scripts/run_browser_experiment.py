@@ -30,7 +30,9 @@ def run_experiment(dataset, hook_file, output_file, visible=False, port=8015):
         with sync_playwright() as p:
             print(f"Launching browser (Headless: {not visible})...")
             browser = p.chromium.launch(headless=not visible)
-            page = browser.new_page()
+            # Set viewport to match backend generation default (1920x1080)
+            context = browser.new_context(viewport={"width": 1920, "height": 1080})
+            page = context.new_page()
             
             # Enable console logging from the browser
             page.on("console", lambda msg: print(f"BROWSER_CONSOLE: {msg.text}"))
