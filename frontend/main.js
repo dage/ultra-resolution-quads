@@ -30,7 +30,9 @@ const state = {
         currentElapsed: 0,
         segmentDurations: [],
         totalDuration: 0
-    }
+    },
+    // Tile Manifest
+    availableTiles: new Set()
 };
 
 // Expose state for debugging and automation
@@ -205,6 +207,22 @@ async function loadDataset(id) {
     // Load Config
     const respConfig = await fetch(`${BASE_DATA_URI}/datasets/${id}/config.json`);
     state.config = await respConfig.json();
+
+    // Load Tile Manifest (to avoid 404s)
+    state.availableTiles.clear();
+    try {
+        const respTiles = await fetch(`${BASE_DATA_URI}/datasets/${id}/tiles.json`);
+        if (respTiles.ok) {
+            const tilesList = await respTiles.json();
+            // Use a Set for O(1) lookups
+            state.availableTiles = new Set(tilesList);
+            console.log(`Loaded manifest: ${state.availableTiles.size} tiles available.`);
+        } else {
+            console.warn("No tiles.json found; tile checking disabled (assumes all exist).");
+        }
+    } catch (e) {
+        console.warn("Failed to load tiles.json:", e);
+    }
     
     // Load Paths
     try {
@@ -723,6 +741,16 @@ function updateLayer(level, opacity, targetTiles) {
     visible.tiles.forEach(t => {
         const x = t.x;
         const y = t.y;
+
+        // Check manifest if available
+        // If the set is empty (failed load or no file), we assume all exist to avoid breaking old datasets.
+        // But if we successfully loaded > 0 tiles, we strictly enforce existence.
+        if (state.availableTiles.size > 0) {
+            const manifestKey = `${level}/${x}/${y}`;
+            if (!state.availableTiles.has(manifestKey)) {
+                return; // Skip non-existent tile
+            }
+        }
 
         const key = `${state.activeDatasetId}|${level}|${x}|${y}`;
         

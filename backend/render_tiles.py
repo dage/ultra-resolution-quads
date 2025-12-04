@@ -142,7 +142,43 @@ def _render_tile(args):
     img.save(img_path, format=TILE_FORMAT, **TILE_WEBP_PARAMS)
     return True, time.time() - t0
 
-def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
+def generate_tile_manifest(dataset_dir):
+    """
+    Scans the dataset directory for all existing .webp tiles and writes a 'tiles.json'
+    manifest file containing a flat list of "level/x/y" strings.
+    This allows the frontend to know exactly which tiles exist without 404s.
+    """
+    if not os.path.exists(dataset_dir):
+        return
+
+    manifest_path = os.path.join(dataset_dir, 'tiles.json')
+    tiles = []
+    
+    # Walk the directory
+    # Structure is dataset_dir/level/x/y.webp
+    for root, dirs, files in os.walk(dataset_dir):
+        for file in files:
+            if file.endswith(TILE_EXTENSION):
+                try:
+                    # root should be .../dataset_id/level/x
+                    # file is y.webp
+                    parts = root.split(os.sep)
+                    x = parts[-1]
+                    level = parts[-2]
+                    y = file.replace(TILE_EXTENSION, "")
+                    
+                    # Verify structure (simple check)
+                    if level.isdigit() and x.isdigit() and y.isdigit():
+                        tiles.append(f"{level}/{x}/{y}")
+                except IndexError:
+                    # Unexpected directory structure, skip
+                    pass
+    
+    with open(manifest_path, 'w') as f:
+        json.dump(tiles, f)
+    # print(f"Updated tile manifest at {manifest_path} ({len(tiles)} tiles)")
+
+def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, num_workers=8):
     """Render a list of (level, x, y, base_path) tasks, skipping those already present."""
     if not tasks:
         print("No new tiles needed.")
@@ -162,6 +198,21 @@ def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
     if not use_multiprocessing and hasattr(renderer, 'supports_multithreading') and renderer.supports_multithreading():
          print("Multithreading disabled by configuration.")
 
+    def _process_progress(idx, total):
+        nonlocal last_update_time, batch_duration, batch_count
+        now = time.time()
+        if now - last_update_time > 60:
+            avg = batch_duration / batch_count if batch_count > 0 else 0.0
+            print(f"Rendering {idx}/{total}... Avg generation (last {batch_count}): {avg:.2f}s")
+            
+            # Periodically update the manifest so the frontend can see progress live
+            if dataset_dir:
+                generate_tile_manifest(dataset_dir)
+            
+            last_update_time = now
+            batch_duration = 0.0
+            batch_count = 0
+
     if use_multiprocessing:
         workers = num_workers if num_workers and num_workers > 0 else 8
         print(f"Rendering {len(tasks)} missing tiles with {workers} workers...")
@@ -173,14 +224,8 @@ def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
                     
                     batch_duration += duration
                     batch_count += 1
+                    _process_progress(idx, len(tasks))
 
-                    now = time.time()
-                    if now - last_update_time > 60:
-                        avg = batch_duration / batch_count if batch_count > 0 else 0.0
-                        print(f"Rendering {idx}/{len(tasks)}... Avg generation (last {batch_count}): {avg:.2f}s")
-                        last_update_time = now
-                        batch_duration = 0.0
-                        batch_count = 0
         except Exception as e:
             print(f"Parallel rendering failed ({e}); falling back to single-process mode...")
             use_multiprocessing = False
@@ -195,14 +240,7 @@ def render_tasks(renderer, tasks, use_multiprocessing=True, num_workers=8):
             
             batch_duration += duration
             batch_count += 1
-
-            now = time.time()
-            if now - last_update_time > 60:
-                avg = batch_duration / batch_count if batch_count > 0 else 0.0
-                print(f"Rendering {idx}/{len(tasks)}... Avg generation (last {batch_count}): {avg:.2f}s")
-                last_update_time = now
-                batch_duration = 0.0
-                batch_count = 0
+            _process_progress(idx, len(tasks))
     
     print(f"Rendering complete. Generated {generated} tiles.")
     return generated
@@ -283,7 +321,7 @@ def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=Tr
         print(f"Full mode: {len(tasks)} / {total_tiles} tiles missing; rendering now...")
     else:
         print("Full mode: all tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+    generated = render_tasks(renderer, tasks, dataset_dir=base_path, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
     return generated, total_tiles, len(tasks)
 
 
@@ -304,7 +342,7 @@ def generate_selected_tiles(renderer, base_path, tiles, use_multiprocessing=True
         print(f"Selected tiles: {len(tasks)} / {len(tiles)} missing; rendering now...")
     else:
         print("Selected tiles: all requested tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+    generated = render_tasks(renderer, tasks, dataset_dir=base_path, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
     return generated, len(tiles), len(tasks)
 
 def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000, use_multiprocessing=True, num_workers=8):
@@ -343,7 +381,7 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000,
         print(f"Path mode: {len(tasks)} new tiles to render (of {len(required_tiles)} unique).")
     else:
         print("Path mode: all required tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+    generated = render_tasks(renderer, tasks, dataset_dir=base_path, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
     return generated
 
 
@@ -421,6 +459,10 @@ def main():
         else:
             # Auto-detect mismatch
             check_and_clean_if_needed(dataset_tiles_root, tile_size)
+            
+        # Initial manifest update to catch up on any previous state (e.g. interrupted run)
+        print(f"Generating initial tile manifest for {dataset_id}...")
+        generate_tile_manifest(dataset_tiles_root)
 
         renderer = load_renderer(renderer_path, tile_size, merged_renderer_kwargs)
 
@@ -461,6 +503,10 @@ def main():
             avg = elapsed / generated if generated else 0.0
             total_tiles = None
             missing = None
+            
+        # Final manifest update
+        print(f"Updating final tile manifest for {dataset_id}...")
+        generate_tile_manifest(dataset_tiles_root)
 
         # File size stats
         file_count = 0
