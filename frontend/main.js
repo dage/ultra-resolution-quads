@@ -431,6 +431,18 @@ function setupEventListeners() {
         updateUI(); 
     });
 
+    // Keyboard Shortcuts
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+            e.preventDefault(); // Prevent scrolling
+            if (els.btns.playPause) els.btns.playPause.click();
+        }
+        if (e.code === 'Escape') {
+            e.preventDefault();
+            if (els.btnToggleUI) els.btnToggleUI.click();
+        }
+    });
+
     // Reset Button
     // els.btnReset.addEventListener('click', resetCamera);
 
