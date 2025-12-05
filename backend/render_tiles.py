@@ -203,7 +203,7 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
         now = time.time()
         if now - last_update_time > 60:
             avg = batch_duration / batch_count if batch_count > 0 else 0.0
-            print(f"Rendering {idx}/{total}... Avg generation (last {batch_count}): {avg:.2f}s")
+            print(f"Rendering {idx}/{total}... Avg generation (last {batch_count}): {avg:.2f}s", flush=True)
             
             # Periodically update the manifest so the frontend can see progress live
             if dataset_dir:
@@ -498,20 +498,26 @@ def main():
         # File size stats
         file_count = 0
         total_bytes = 0
+        sizes = []
         for root, _, files in os.walk(dataset_tiles_root):
             for fname in files:
                 if fname.lower().endswith(TILE_EXTENSION):
                     file_count += 1
-                    total_bytes += os.path.getsize(os.path.join(root, fname))
+                    sz = os.path.getsize(os.path.join(root, fname))
+                    total_bytes += sz
+                    sizes.append(sz)
         avg_size = total_bytes / file_count if file_count else 0.0
         avg_kb = avg_size / 1024.0
+        min_kb = min(sizes) / 1024.0 if sizes else 0.0
+        max_kb = max(sizes) / 1024.0 if sizes else 0.0
+        median_kb = sorted(sizes)[len(sizes)//2] / 1024.0 if sizes else 0.0
 
         if explicit_tiles:
-            print(f"Stats: generated={generated}, requested_missing={missing}, requested_total={total_tiles}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={dataset_tiles_root}")
+            print(f"Stats: generated={generated}, requested_missing={missing}, requested_total={total_tiles}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB (median {median_kb:.2f}KB, min {min_kb:.2f}KB, max {max_kb:.2f}KB), path={dataset_tiles_root}")
         elif mode == 'full':
-            print(f"Stats: generated={generated}, requested_missing={missing}, total_possible={total_tiles}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={dataset_tiles_root}")
+            print(f"Stats: generated={generated}, requested_missing={missing}, total_possible={total_tiles}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB (median {median_kb:.2f}KB, min {min_kb:.2f}KB, max {max_kb:.2f}KB), path={dataset_tiles_root}")
         else:
-            print(f"Stats: tiles_generated={generated}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB, path={dataset_tiles_root}")
+            print(f"Stats: tiles_generated={generated}, total_time={elapsed:.3f}s, avg_per_tile={avg*1000:.2f}ms, avg_file_size={avg_kb:.2f}KB (median {median_kb:.2f}KB, min {min_kb:.2f}KB, max {max_kb:.2f}KB), path={dataset_tiles_root}")
             
     print("Done.")
 
