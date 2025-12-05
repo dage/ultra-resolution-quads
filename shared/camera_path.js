@@ -128,9 +128,13 @@
   };
 
   const visualDist = (p1, p2) => {
-    const l_avg = (p1.globalLevel + p2.globalLevel) / 2;
-    // Scale = 2^l_avg
-    const scale = Decimal.pow(2, l_avg);
+    // Use the minimum level for scale to approximate the visual distance 
+    // of the pan, assuming an optimal "Zoom then Pan" or "Pan then Zoom" 
+    // trajectory (hyperbolic) which performs lateral movement at the coarsest level.
+    // Using average level (linear midpoint) overestimates distance wildly for deep zooms.
+    const l_ref = Math.min(p1.globalLevel, p2.globalLevel);
+    // Scale = 2^l_ref
+    const scale = Decimal.pow(2, l_ref);
     
     // dx = (p1.x - p2.x) * scale
     const dx = p1.x.minus(p2.x).times(scale);
@@ -226,7 +230,9 @@
 
     return {
       cameraAtProgress,
-      pointAtProgress: cameraAtProgress
+      pointAtProgress: cameraAtProgress,
+      totalLength: total,
+      stops: cumulative
     };
   }
 

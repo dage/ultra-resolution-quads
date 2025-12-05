@@ -78,7 +78,11 @@ async function main() {
     };
   });
 
-  process.stdout.write(JSON.stringify({ cameras, tiles: allTiles }));
+  process.stdout.write(JSON.stringify({ 
+    cameras, 
+    tiles: allTiles,
+    totalLength: sampler.totalLength
+  }));
 }
 
 main().catch((err) => {

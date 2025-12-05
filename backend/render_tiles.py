@@ -320,7 +320,7 @@ def generate_selected_tiles(renderer, base_path, tiles, use_multiprocessing=True
     generated = render_tasks(renderer, tasks, dataset_dir=base_path, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
     return generated, len(tiles), len(tasks)
 
-def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000, use_multiprocessing=True, num_workers=8, viewport_width=1920, viewport_height=1080):
+def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=None, use_multiprocessing=True, num_workers=8, viewport_width=1920, viewport_height=1080):
     if not path:
         print(f"No path defined for {dataset_id}; skipping path-based generation.")
         return 0
@@ -330,7 +330,20 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000,
         print(f"Path for {dataset_id} has fewer than 2 keyframes; skipping.")
         return 0
 
-    print(f"Generating tiles along path for {dataset_id} (Viewport: {viewport_width}x{viewport_height})...")
+    # Dynamic step calculation
+    if steps is None:
+        try:
+            info = camera_utils.get_path_info(path)
+            length = info.get('totalLength', 0)
+            # Heuristic: 100 samples per visual unit ensures very dense coverage for smooth animations.
+            # Enforce a reasonable minimum (e.g. 200) to avoid undersampling short paths.
+            steps = int(max(200, length * 100))
+            print(f"Calculated path length: {length:.2f}. Using {steps} samples.")
+        except Exception as e:
+            print(f"Warning: could not calculate dynamic path length ({e}). Falling back to 2000 steps.")
+            steps = 2000
+
+    print(f"Generating tiles along path for {dataset_id} (Viewport: {viewport_width}x{viewport_height}, Samples: {steps})...")
     required_tiles = set()  # (level, x, y)
 
     progresses = [s / steps for s in range(steps + 1)]

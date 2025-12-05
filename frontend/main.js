@@ -561,31 +561,6 @@ function cameraToGlobal(camera) {
     };
 }
 
-function segmentDurationMs(k1, k2) {
-    // Calculate Visual Distance between two camera states
-    const l1 = k1.globalLevel;
-    const l2 = k2.globalLevel;
-    // Use the minimum level for scale to approximate the visual distance 
-    // of the pan, assuming an optimal "Zoom then Pan" or "Pan then Zoom" 
-    // trajectory (hyperbolic) which performs lateral movement at the coarsest level.
-    const scale = Decimal.pow(2, Math.min(l1, l2));
-
-    const g1 = cameraToGlobal(k1);
-    const g2 = cameraToGlobal(k2);
-    
-    // Use Decimal for difference, then convert to Number
-    const dx = g1.x.minus(g2.x).times(scale).toNumber();
-    const dy = g1.y.minus(g2.y).times(scale).toNumber();
-    const dl = Math.abs(l1 - l2);
-    const dr = Math.abs(g1.rotation - g2.rotation);
-    
-    // Visual Distance = Hypotenuse of Pan (in screens) and Zoom (in levels)
-    const dist = Math.sqrt(dx*dx + dy*dy + dl*dl + dr*dr);
-    
-    const durationSeconds = dist / PATH_SPEED.visualUnitsPerSecond;
-    return Math.max(durationSeconds * 1000, PATH_SPEED.minSegmentMs);
-}
-
 function recalculateExperienceTiming() {
     if (!state.activePath || !state.activePath.keyframes || state.activePath.keyframes.length < 2) {
         state.experience.segmentDurations = [];
@@ -593,12 +568,28 @@ function recalculateExperienceTiming() {
         return;
     }
 
-    const durations = [];
-    for (let i = 0; i < state.activePath.keyframes.length - 1; i++) {
-        const k1 = state.activePath.keyframes[i].camera;
-        const k2 = state.activePath.keyframes[i + 1].camera;
-        durations.push(segmentDurationMs(k1, k2));
+    // Use the Sampler's pre-calculated cumulative distances (stops) to determine segment lengths.
+    // This ensures the playback timing matches the interpolation logic (Single Source of Truth).
+    if (!state.pathSampler || !state.pathSampler.stops) {
+        // If sampler isn't ready, we can't calculate timing. 
+        // This might happen if CameraPath lib is missing or path is invalid.
+        state.experience.segmentDurations = [];
+        state.experience.totalDuration = 0;
+        return;
     }
+
+    const stops = state.pathSampler.stops;
+    const durations = [];
+    
+    // Keyframe i to i+1 corresponds to stops[i] to stops[i+1]
+    for (let i = 0; i < state.activePath.keyframes.length - 1; i++) {
+        // Distance for this segment
+        const dist = stops[i+1] - stops[i];
+        
+        const durationSeconds = dist / PATH_SPEED.visualUnitsPerSecond;
+        durations.push(Math.max(durationSeconds * 1000, PATH_SPEED.minSegmentMs));
+    }
+    
     state.experience.segmentDurations = durations;
     state.experience.totalDuration = durations.reduce((a, b) => a + b, 0);
 }

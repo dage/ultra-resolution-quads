@@ -219,3 +219,32 @@ def cameras_at_progresses_parallel(progresses, path, viewport_width, viewport_he
         all_tiles.extend(tiles)
         
     return all_cameras, all_tiles
+
+def get_path_info(path):
+    """
+    Retrieve metadata about the path (like total length) without generating all samples.
+    """
+    payload = {
+        "path": path,
+        "progress": [],
+        "options": {},
+        # Default viewport/tile params, doesn't matter for length
+        "viewport": {"width": 100, "height": 100},
+        "tileSize": 512
+    }
+    try:
+        proc = subprocess.run(
+            ["node", str(_node_cli)],
+            input=json.dumps(payload),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=None, 
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"camera_path_cli failed with return code {exc.returncode}") from exc
+    
+    if not proc.stdout.strip():
+        raise RuntimeError("camera_path_cli returned empty output")
+
+    return json.loads(proc.stdout)
