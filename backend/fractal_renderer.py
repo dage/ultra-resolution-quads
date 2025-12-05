@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+import contextlib
 import numpy as np
 from typing import Union, Optional, List, Dict, Any, Literal
 
@@ -61,6 +62,7 @@ class FractalShadesRenderer:
         os.makedirs(self.output_dir, exist_ok=True)
         fs.settings.enable_multithreading = True
         fs.settings.verbosity = verbosity
+        fs.settings.inspect_calc = False  # suppress detailed perturbation loop logs
 
     def _create_model(self, 
                       model_name: str, 
@@ -178,6 +180,9 @@ class FractalShadesRenderer:
         """
         Render a fractal image with high configurability matching fractalshades gallery capabilities.
         """
+        # Force settings inside worker processes so logs stay suppressed
+        fs.settings.inspect_calc = False
+        fs.settings.verbosity = 0
         
         # 1. Resolve Paths
         if output_path:
@@ -201,8 +206,20 @@ class FractalShadesRenderer:
         use_perturbation = False
         if precision is not None:
             use_perturbation = True
-        elif isinstance(dx, str) and "e-" in dx and float(dx) < 1e-13:
+        elif isinstance(dx, str) and ("e-" in dx.lower()) and float(dx) < 1e-13:
             use_perturbation = True
+            if precision is None:
+                 # Auto-calculate precision based on dx
+                 try:
+                     import math
+                     val = float(dx)
+                     if val > 0:
+                         # Add buffer for safety (e.g. 30 digits extra)
+                         precision = int(-math.log10(val)) + 30
+                     else:
+                         precision = 50
+                 except:
+                     precision = 50
             
         fractal = self._create_model(fractal_type, model_dir, use_perturbation, **f_params)
 
@@ -265,31 +282,37 @@ class FractalShadesRenderer:
                 del calc_kwargs["interior_detect"]
 
         # Run Calc
-        if hasattr(fractal, "calc_std_div"):
-            try:
-                fractal.calc_std_div(**calc_kwargs)
-            except TypeError as e:
-                print(f"Warning: calc_std_div failed with {e}. Retrying with minimal args.")
-                # Retry without unsupported args if necessary (simple fallback)
-                if "interior_detect" in calc_kwargs:
-                    del calc_kwargs["interior_detect"]
-                if "epsilon_stationnary" in calc_kwargs:
-                    del calc_kwargs["epsilon_stationnary"]
-                fractal.calc_std_div(**calc_kwargs)
-        elif hasattr(fractal, "newton_calc"):
-            # Special case for Power Tower / Newton
-            newton_kwargs = {
-                "calc_name": calc_name,
-                "subset": None,
-                "max_newton": 20,
-                "eps_newton_cv": 1e-12,
-                "max_order": 2000, # Default required param
-            }
-            # Merge c_args for things like max_order, compute_order
-            newton_kwargs.update(c_args)
-            fractal.newton_calc(**newton_kwargs)
-        else:
-            raise RuntimeError(f"Model {type(fractal)} has no known calculation method (calc_std_div or newton_calc).")
+        # Force settings inside worker processes and silence noisy stdout
+        fs.settings.inspect_calc = False
+        fs.settings.verbosity = 0
+
+        with open(os.devnull, "w") as devnull:
+            with contextlib.redirect_stdout(devnull):
+                if hasattr(fractal, "calc_std_div"):
+                    try:
+                        fractal.calc_std_div(**calc_kwargs)
+                    except TypeError as e:
+                        print(f"Warning: calc_std_div failed with {e}. Retrying with minimal args.")
+                        # Retry without unsupported args if necessary (simple fallback)
+                        if "interior_detect" in calc_kwargs:
+                            del calc_kwargs["interior_detect"]
+                        if "epsilon_stationnary" in calc_kwargs:
+                            del calc_kwargs["epsilon_stationnary"]
+                        fractal.calc_std_div(**calc_kwargs)
+                elif hasattr(fractal, "newton_calc"):
+                    # Special case for Power Tower / Newton
+                    newton_kwargs = {
+                        "calc_name": calc_name,
+                        "subset": None,
+                        "max_newton": 20,
+                        "eps_newton_cv": 1e-12,
+                        "max_order": 2000, # Default required param
+                    }
+                    # Merge c_args for things like max_order, compute_order
+                    newton_kwargs.update(c_args)
+                    fractal.newton_calc(**newton_kwargs)
+                else:
+                    raise RuntimeError(f"Model {type(fractal)} has no known calculation method (calc_std_div or newton_calc).")
 
         # 5. Post-processing Setup
         pp = Postproc_batch(fractal, calc_name)
