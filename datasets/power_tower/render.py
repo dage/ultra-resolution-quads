@@ -6,6 +6,7 @@ from PIL import Image
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 from backend.fractal_renderer import FractalShadesRenderer
+from backend.renderer_utils import calculate_max_iter
 
 class PowerTowerRenderer:
     def __init__(self, tile_size=512, root_x=1.40735, root_y=-3.36277, root_dx=0.0005, supersampling=None):
@@ -16,8 +17,10 @@ class PowerTowerRenderer:
         self.supersampling = supersampling
         
         # Initialize the backend renderer
-        # We use a specific temp directory for this dataset to avoid collisions
-        self.output_dir = os.path.join(os.path.dirname(__file__), "temp_render_output")
+        # Keep temp outputs in artifacts, not in the dataset folder
+        self.output_dir = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "artifacts", "temp_render_output", "power_tower"
+        ))
         self.fs_renderer = FractalShadesRenderer(self.output_dir)
 
     def render(self, level, tile_x, tile_y):
@@ -47,7 +50,7 @@ class PowerTowerRenderer:
             y=center_y,
             dx=current_dx,
             nx=self.tile_size,
-            max_iter=200,
+            max_iter=calculate_max_iter(level),
             colormap="flower",
             supersampling=self.supersampling,
             interior_detect=True,

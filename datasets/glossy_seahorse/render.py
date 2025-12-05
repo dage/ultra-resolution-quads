@@ -10,6 +10,7 @@ getcontext().prec = 200
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 from backend.fractal_renderer import FractalShadesRenderer
+from backend.renderer_utils import calculate_max_iter
 
 class GlossySeahorseRenderer:
     def __init__(self, tile_size=16, root_x="-0.746223962861", root_y="-0.0959468433527", root_dx="0.00745", supersampling=None):
@@ -21,8 +22,10 @@ class GlossySeahorseRenderer:
         self.supersampling = supersampling
         
         # Initialize the backend renderer
-        # We use a specific temp directory for this dataset to avoid collisions
-        self.output_dir = os.path.join(os.path.dirname(__file__), "temp_render_output")
+        # Keep temp outputs in artifacts, not in the dataset folder
+        self.output_dir = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "artifacts", "temp_render_output", "glossy_seahorse"
+        ))
         self.fs_renderer = FractalShadesRenderer(self.output_dir)
 
     def render(self, level, tile_x, tile_y):
@@ -49,6 +52,9 @@ class GlossySeahorseRenderer:
         center_x = tile_left + current_dx / Decimal(2.0)
         center_y = tile_top - current_dx / Decimal(2.0)
         
+        # Dynamic Max Iterations
+        max_iter = calculate_max_iter(level)
+        
         # Render using FractalShades
         # Pass coordinates as strings to preserve precision for FractalShades (which handles string inputs via gmpy2 usually)
         _, img = self.fs_renderer.render(
@@ -57,7 +63,7 @@ class GlossySeahorseRenderer:
             y=str(center_y),
             dx=str(current_dx),
             nx=self.tile_size,
-            max_iter=2000,
+            max_iter=max_iter,
             colormap="legacy",
             shade_kind="glossy",
             lighting_config={

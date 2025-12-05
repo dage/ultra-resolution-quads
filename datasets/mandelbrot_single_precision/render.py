@@ -1,6 +1,13 @@
 import moderngl
 import numpy as np
 from PIL import Image
+import os
+import sys
+
+# Add project root to path to find backend
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
+from backend.renderer_utils import calculate_max_iter
 
 class MandelbrotDeepZoomRenderer:
     def __init__(self, tile_size=256, max_iter=1024):
@@ -164,7 +171,7 @@ class MandelbrotDeepZoomRenderer:
         if 'u_tile_x' in self.prog: self.prog['u_tile_x'].value = tile_x
         if 'u_tile_y' in self.prog: self.prog['u_tile_y'].value = tile_y
         if 'u_tile_size' in self.prog: self.prog['u_tile_size'].value = self.tile_size
-        if 'u_max_iter' in self.prog: self.prog['u_max_iter'].value = self.max_iter
+        if 'u_max_iter' in self.prog: self.prog['u_max_iter'].value = calculate_max_iter(level)
         
         self.ctx.clear(0.0, 0.0, 0.0, 1.0)
         self.vao.render()

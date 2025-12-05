@@ -7,6 +7,7 @@ import math
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 from backend.fractal_renderer import FractalShadesRenderer
+from backend.renderer_utils import calculate_max_iter
 
 class JuliaDeepRenderer:
     def __init__(self, tile_size=512, **renderer_kwargs):
@@ -18,7 +19,10 @@ class JuliaDeepRenderer:
         getcontext().prec = precision + 20 # Buffer
         
         # Initialize the backend renderer
-        self.output_dir = os.path.join(os.path.dirname(__file__), "temp_render_output")
+        # Keep temp outputs in artifacts, not in the dataset folder
+        self.output_dir = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "artifacts", "temp_render_output", "deep_embedded_julia"
+        ))
         self.fs_renderer = FractalShadesRenderer(self.output_dir)
 
         # Extract root parameters for coordinate calculation
@@ -62,6 +66,9 @@ class JuliaDeepRenderer:
         render_params["filename"] = f"tile_{level}_{tile_x}_{tile_y}.webp"
         render_params["return_pillow_image"] = True
         render_params["batch_prefix"] = f"juliad_{level}_{tile_x}_{tile_y}"
+        
+        # Dynamic Max Iterations
+        render_params["max_iter"] = calculate_max_iter(level)
         
         _, img = self.fs_renderer.render(**render_params)
         
