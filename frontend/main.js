@@ -3,6 +3,8 @@ const BASE_DATA_URI = '..';
 const LOGICAL_TILE_SIZE = 512;
 
 // Application State
+Decimal.set({ precision: 200 });
+
 const state = {
     datasets: [],
     activeDatasetId: null,
@@ -12,8 +14,8 @@ const state = {
     autoplayPending: false,
     camera: {
         globalLevel: 0,
-        x: 0.5,
-        y: 0.5,
+        x: new Decimal("0.5"),
+        y: new Decimal("0.5"),
         rotation: 0
     },
     isDragging: false,
@@ -415,8 +417,12 @@ function setupEventListeners() {
             updateUI(); 
         }
     });
-    els.inputs.x.addEventListener('input', (e) => { state.camera.x = clamp01(parseFloat(e.target.value)); updateUI(); });
-    els.inputs.y.addEventListener('input', (e) => { state.camera.y = clamp01(parseFloat(e.target.value)); updateUI(); });
+    els.inputs.x.addEventListener('input', (e) => { 
+        try { state.camera.x = clamp01(new Decimal(e.target.value)); updateUI(); } catch(err) {}
+    });
+    els.inputs.y.addEventListener('input', (e) => { 
+        try { state.camera.y = clamp01(new Decimal(e.target.value)); updateUI(); } catch(err) {}
+    });
     els.inputs.rotation.addEventListener('input', (e) => { 
         state.camera.rotation = parseFloat(e.target.value); 
         updateUI(); 
@@ -442,8 +448,8 @@ function resetCamera() {
     };
 
     state.camera.globalLevel = cam.globalLevel ?? cam.level ?? 0;
-    state.camera.x = cam.x ?? 0.5;
-    state.camera.y = cam.y ?? 0.5;
+    state.camera.x = new Decimal(cam.x ?? 0.5);
+    state.camera.y = new Decimal(cam.y ?? 0.5);
     state.camera.rotation = cam.rotation || 0;
 
     state.experience.currentElapsed = 0;
@@ -480,14 +486,19 @@ function forceSeek(elapsedTime) {
 
 // Camera Logic
 function clamp01(v) {
+    if (v && typeof v.lessThan === 'function') {
+        if (v.lessThan(0)) return new Decimal(0);
+        if (v.greaterThan(1)) return new Decimal(1);
+        return v;
+    }
     if (Number.isNaN(v) || !Number.isFinite(v)) return 0.5;
     return Math.min(1, Math.max(0, v));
 }
 
 function pan(dx, dy) {
     // Compute delta in normalized global units. One tile at current level spans 1 / 2^level.
-    const scale = Math.pow(2, state.camera.globalLevel);
-    const worldPerPixel = 1 / (LOGICAL_TILE_SIZE * scale);
+    const scale = Decimal.pow(2, state.camera.globalLevel);
+    const worldPerPixel = new Decimal(1).div(scale.times(LOGICAL_TILE_SIZE));
     
     // Rotate vector according to camera rotation
     // Screen to World rotation is +rot (because World to Screen is -rot).
@@ -501,8 +512,8 @@ function pan(dx, dy) {
     const dx_w = dx * Math.cos(r) - dy * Math.sin(r);
     const dy_w = dx * Math.sin(r) + dy * Math.cos(r);
 
-    state.camera.x = clamp01(state.camera.x - dx_w * worldPerPixel);
-    state.camera.y = clamp01(state.camera.y - dy_w * worldPerPixel);
+    state.camera.x = clamp01(state.camera.x.minus(worldPerPixel.times(dx_w)));
+    state.camera.y = clamp01(state.camera.y.minus(worldPerPixel.times(dy_w)));
     updateUI();
 }
 
@@ -511,20 +522,28 @@ function zoom(amount) {
     updateUI();
 }
 
+const LOG10_2 = Math.log10 ? Math.log10(2) : Math.LOG10E * Math.LN2;
+function positionPrecision(level) {
+    const levelDigits = Math.ceil(Math.max(0, level) * LOG10_2);
+    // Keep a reasonable floor/ceiling to avoid unbounded strings
+    return Math.max(6, Math.min(50, levelDigits + 3));
+}
+
 function updateUI() {
     if (!els.vals.level) return;
     const lvl = Math.floor(state.camera.globalLevel);
     const zoomOffset = state.camera.globalLevel - lvl;
-    els.vals.level.textContent = lvl + " (+ " + zoomOffset.toFixed(17) + ")";
-    if (els.vals.x) els.vals.x.textContent = state.camera.x.toFixed(17);
-    if (els.vals.y) els.vals.y.textContent = state.camera.y.toFixed(17);
-    if (els.vals.rotation) els.vals.rotation.textContent = (state.camera.rotation || 0).toFixed(17);
+    const posDigits = positionPrecision(state.camera.globalLevel);
+    els.vals.level.textContent = lvl + " (+ " + zoomOffset.toFixed(3) + ")";
+    if (els.vals.x) els.vals.x.textContent = state.camera.x.toFixed(posDigits);
+    if (els.vals.y) els.vals.y.textContent = state.camera.y.toFixed(posDigits);
+    if (els.vals.rotation) els.vals.rotation.textContent = (state.camera.rotation || 0).toFixed(3);
     
     // Only update inputs if they are not focused to allow editing without overwrite
     if (document.activeElement !== els.inputs.level) els.inputs.level.value = lvl;
-    if (document.activeElement !== els.inputs.x) els.inputs.x.value = state.camera.x;
-    if (document.activeElement !== els.inputs.y) els.inputs.y.value = state.camera.y;
-    if (document.activeElement !== els.inputs.rotation) els.inputs.rotation.value = state.camera.rotation || 0;
+    if (document.activeElement !== els.inputs.x) els.inputs.x.value = state.camera.x.toFixed(posDigits);
+    if (document.activeElement !== els.inputs.y) els.inputs.y.value = state.camera.y.toFixed(posDigits);
+    if (document.activeElement !== els.inputs.rotation) els.inputs.rotation.value = (state.camera.rotation || 0).toFixed(3);
 }
 
 // Experience (Path Playback) Logic
@@ -549,13 +568,14 @@ function segmentDurationMs(k1, k2) {
     // Use the minimum level for scale to approximate the visual distance 
     // of the pan, assuming an optimal "Zoom then Pan" or "Pan then Zoom" 
     // trajectory (hyperbolic) which performs lateral movement at the coarsest level.
-    const scale = Math.pow(2, Math.min(l1, l2));
+    const scale = Decimal.pow(2, Math.min(l1, l2));
 
     const g1 = cameraToGlobal(k1);
     const g2 = cameraToGlobal(k2);
     
-    const dx = (g1.x - g2.x) * scale;
-    const dy = (g1.y - g2.y) * scale;
+    // Use Decimal for difference, then convert to Number
+    const dx = g1.x.minus(g2.x).times(scale).toNumber();
+    const dy = g1.y.minus(g2.y).times(scale).toNumber();
     const dl = Math.abs(l1 - l2);
     const dr = Math.abs(g1.rotation - g2.rotation);
     
@@ -727,22 +747,17 @@ function updateLayer(level, opacity, targetTiles) {
 
     // Center of the world in global coords is state.camera.x, state.camera.y
     // We need to compute screen position for each tile.
-    // ScreenX = ViewCenter + (TileGlobalX - CamGlobalX) * GlobalScale * TileSize? 
-    // Actually: (TileGlobalX - CamGlobalX) is distance in Global Units.
-    // WorldSize = 2^Level * TileSize
-    // But let's stick to the previous logic which worked for positioning, 
-    // just using the loop from 'visible.tiles'.
-
-    const camX_T = state.camera.x * Math.pow(2, level);
-    const camY_T = state.camera.y * Math.pow(2, level);
+    
+    // We calculate camera position in "Tile Units" at this level using Decimal
+    const levelScale = Decimal.pow(2, level);
+    const camX_T = state.camera.x.times(levelScale);
+    const camY_T = state.camera.y.times(levelScale);
 
     visible.tiles.forEach(t => {
-        const x = t.x;
-        const y = t.y;
+        const x = t.x; // String
+        const y = t.y; // String
 
         // Check manifest if available
-        // If the set is empty (failed load or no file), we assume all exist to avoid breaking old datasets.
-        // But if we successfully loaded > 0 tiles, we strictly enforce existence.
         if (state.availableTiles.size > 0) {
             const manifestKey = `${level}/${x}/${y}`;
             if (!state.availableTiles.has(manifestKey)) {
@@ -752,9 +767,14 @@ function updateLayer(level, opacity, targetTiles) {
 
         const key = `${state.activeDatasetId}|${level}|${x}|${y}`;
         
-        // Calculate screen position (same logic as before)
-        const distX = x - camX_T;
-        const distY = y - camY_T;
+        // Calculate screen position
+        // Convert tile index string to Decimal, subtract camera pos, then convert to Number for screen layout
+        // This maintains precision because the difference is small (within viewport)
+        const tX = new Decimal(x);
+        const tY = new Decimal(y);
+        
+        const distX = tX.minus(camX_T).toNumber();
+        const distY = tY.minus(camY_T).toNumber();
         
         const screenX = state.viewSize.width/2 + distX * tileSizeOnScreen;
         const screenY = state.viewSize.height/2 + distY * tileSizeOnScreen;

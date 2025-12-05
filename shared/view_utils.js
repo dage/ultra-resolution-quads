@@ -7,92 +7,125 @@
 
 (function(root, factory) {
     if (typeof module === 'object' && module.exports) {
-        module.exports = factory();
+        // Node.js: Require vendored file relative to this file
+        const Decimal = require('./libs/decimal.min.js');
+        module.exports = factory(Decimal);
     } else {
-        root.ViewUtils = factory();
+        // Browser: Expect global dependency
+        root.ViewUtils = factory(root.Decimal);
     }
-}(typeof self !== 'undefined' ? self : this, function() {
+}(typeof self !== 'undefined' ? self : this, function(Decimal) {
 
     /**
      * Calculates the range of tiles visible for a specific level using a Bounding Circle.
      * This is rotation-invariant and simpler than calculating rotated corners.
      * 
-     * @param {Object} camera - { x, y, globalLevel } (x,y are 0-1 normalized)
+     * @param {Object} camera - { x: Decimal, y: Decimal, globalLevel: Number }
      * @param {number} targetLevel - The integer level we want to find tiles for.
      * @param {number} viewWidth - Viewport width in pixels.
      * @param {number} viewHeight - Viewport height in pixels.
      * @param {number} tileSize - logical tile size (e.g. 512).
-     * @returns {Object} { minX, maxX, minY, maxY, tiles: [] }
+     * @returns {Object} { minX, maxX, minY, maxY, tiles: [] } -> x/y are BigInt or String
      */
     function getVisibleTilesForLevel(camera, targetLevel, viewWidth, viewHeight, tileSize) {
+        const t0 = Date.now();
+        
         // 1. Calculate Half-Diagonal (Radius) of the Viewport in Pixels
-        // This is the distance from center to the farthest corner.
         const viewRadiusPx = Math.sqrt((viewWidth/2)**2 + (viewHeight/2)**2);
 
         // 2. Calculate Global Units per Pixel
-        // World Size = 2^cameraLevel * tileSize
-        const worldSizePx = Math.pow(2, camera.globalLevel) * tileSize;
-        const globalUnitsPerPixel = 1.0 / worldSizePx;
+        const worldSizePx = Decimal.pow(2, camera.globalLevel).times(tileSize);
+        const globalUnitsPerPixel = new Decimal(1).div(worldSizePx);
 
         // 3. Calculate Radius in Global Units
-        const radiusGlobal = viewRadiusPx * globalUnitsPerPixel;
+        const radiusGlobal = globalUnitsPerPixel.times(viewRadiusPx);
 
         // 4. Determine Bounds in Global Coordinates
-        const minGx = camera.x - radiusGlobal;
-        const maxGx = camera.x + radiusGlobal;
-        const minGy = camera.y - radiusGlobal;
-        const maxGy = camera.y + radiusGlobal;
+        const minGx = camera.x.minus(radiusGlobal);
+        const maxGx = camera.x.plus(radiusGlobal);
+        const minGy = camera.y.minus(radiusGlobal);
+        const maxGy = camera.y.plus(radiusGlobal);
 
         // 5. Convert to Tile Coordinates at Target Level
-        const levelScale = Math.pow(2, targetLevel);
+        const levelScale = Decimal.pow(2, targetLevel);
         
-        const minTx = minGx * levelScale;
-        const maxTx = maxGx * levelScale;
-        const minTy = minGy * levelScale;
-        const maxTy = maxGy * levelScale;
+        const minTx = minGx.times(levelScale);
+        const maxTx = maxGx.times(levelScale);
+        const minTy = minGy.times(levelScale);
+        const maxTy = maxGy.times(levelScale);
 
         // 6. Determine Integer Tile Bounds
-        const limit = Math.pow(2, targetLevel);
+        const limit = Decimal.pow(2, targetLevel);
         
-        // We use floor/ceil to fully cover the range
-        const startX = Math.max(0, Math.floor(minTx));
-        const endX   = Math.min(limit - 1, Math.floor(maxTx));
-        const startY = Math.max(0, Math.floor(minTy));
-        const endY   = Math.min(limit - 1, Math.floor(maxTy));
+        const startX_dec = minTx.floor();
+        const endX_dec   = maxTx.floor();
+        const startY_dec = minTy.floor();
+        const endY_dec   = maxTy.floor();
         
+        const zero = new Decimal(0);
+        const maxIdx = limit.minus(1);
+
+        const startX = startX_dec.lessThan(zero) ? zero : startX_dec;
+        const endX   = endX_dec.greaterThan(maxIdx) ? maxIdx : endX_dec;
+        const startY = startY_dec.lessThan(zero) ? zero : startY_dec;
+        const endY   = endY_dec.greaterThan(maxIdx) ? maxIdx : endY_dec;
+
+        // Check bounds size
+        const diffX = endX.minus(startX).toNumber();
+        const diffY = endY.minus(startY).toNumber();
+        if (diffX > 100 || diffY > 100) console.error(`WARNING: Massive loop detected at Level ${targetLevel}: ${diffX}x${diffY}`);
+
         // Optimization: Radius in tile units for circular crop
-        // We already computed minTx/maxTx based on 'radiusGlobal * levelScale'
-        // Radius in tiles = radiusGlobal * levelScale
-        const radiusInTiles = radiusGlobal * levelScale;
-        const centerTx = camera.x * levelScale;
-        const centerTy = camera.y * levelScale;
-        const radiusSq = radiusInTiles * radiusInTiles;
+        const radiusInTiles = radiusGlobal.times(levelScale);
+        const centerTx = camera.x.times(levelScale);
+        const centerTy = camera.y.times(levelScale);
+        
+        // Calculate radius squared in standard number (it's small, ~2-3 tiles)
+        // Add buffer (0.75)
+        const radiusSq_num = (radiusInTiles.toNumber() + 0.75) ** 2;
+
+        const startX_bi = BigInt(startX.toFixed(0));
+        const endX_bi   = BigInt(endX.toFixed(0));
+        const startY_bi = BigInt(startY.toFixed(0));
+        const endY_bi   = BigInt(endY.toFixed(0));
+        
+        // Optimize Loop:
+        // We need (x + 0.5 - centerTx)^2 + (y + 0.5 - centerTy)^2 < r^2
+        // x is BigInt. centerTx is Decimal.
+        // Let centerTx_bi = BigInt(centerTx.floor())
+        // Let centerTx_frac = centerTx.minus(centerTx_bi).toNumber()
+        // dist = (x - centerTx_bi) + 0.5 - centerTx_frac
+        
+        const centerTx_dec_floor = centerTx.floor();
+        const centerTy_dec_floor = centerTy.floor();
+        
+        const centerTx_bi = BigInt(centerTx_dec_floor.toFixed(0));
+        const centerTy_bi = BigInt(centerTy_dec_floor.toFixed(0));
+        
+        const centerTx_frac = centerTx.minus(centerTx_dec_floor).toNumber();
+        const centerTy_frac = centerTy.minus(centerTy_dec_floor).toNumber();
 
         const tiles = [];
-        for (let x = startX; x <= endX; x++) {
-            for (let y = startY; y <= endY; y++) {
-                // Check if any part of the tile is within the radius?
-                // Conservative check: distance from center of tile to center of camera?
-                // Or strictly: is the tile within the circle?
-                // The 'radius' covers the farthest corner of the viewport.
-                // So any tile intersecting this circle *might* be visible.
-                // A safe check is: dist(tileCenter, camCenter) < radius + tileDiagonal/2
-                // Tile Diagonal/2 = sqrt(0.5^2 + 0.5^2) = ~0.707.
+        
+        for (let x = startX_bi; x <= endX_bi; x++) {
+            // Convert BigInt difference to Number (safe because viewport is small)
+            const diffX = Number(x - centerTx_bi);
+            const distX = diffX + 0.5 - centerTx_frac;
+            const distX2 = distX * distX;
+
+            for (let y = startY_bi; y <= endY_bi; y++) {
+                const diffY = Number(y - centerTy_bi);
+                const distY = diffY + 0.5 - centerTy_frac;
                 
-                const distX = (x + 0.5) - centerTx;
-                const distY = (y + 0.5) - centerTy;
-                const dSq = distX*distX + distY*distY;
-                
-                // We add a small buffer (0.75) to account for tile corner intersection
-                if (dSq < (radiusInTiles + 0.75) ** 2) {
-                    tiles.push({ level: targetLevel, x, y });
+                if (distX2 + distY * distY < radiusSq_num) {
+                    tiles.push({ level: targetLevel, x: x.toString(), y: y.toString() });
                 }
             }
         }
-
+        
         return {
-            minX: startX, maxX: endX,
-            minY: startY, maxY: endY,
+            minX: startX_bi.toString(), maxX: endX_bi.toString(),
+            minY: startY_bi.toString(), maxY: endY_bi.toString(),
             tiles
         };
     }
@@ -117,10 +150,6 @@
         }
 
         // 3. Child Level (Next Detail)
-        // Only if we are zooming "into" it (fraction > 0) or just to be ready
-        // Use a threshold to avoid loading next level if we are exactly on the integer?
-        // Usually good to always load to allow smooth start of zoom.
-        // However, strict culling might check if (camera.globalLevel > baseLevel)
         const child = getVisibleTilesForLevel(camera, baseLevel + 1, viewWidth, viewHeight, tileSize);
         required.push(...child.tiles);
         

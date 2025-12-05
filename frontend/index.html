@@ -69,12 +69,14 @@
                     <input type="range" id="in-y" min="0" max="1" step="0.0001" value="0.5">
                 </div>
                 <div class="control-group">
-                    <label>Rot: <span id="val-rot">0.00</span></label>
+                    <label>Rotation: <span id="val-rot">0.000</span></label>
                     <input type="range" id="in-rot" min="0" max="6.28318" step="0.01" value="0">
                 </div>
             </div>
         </div>
     </div>
+    <!-- Shared Logic (Decimal must be loaded first for downstream modules) -->
+    <script src="../shared/libs/decimal.min.js"></script>
     <script src="../shared/camera_path.js"></script>
     <script src="../shared/view_utils.js"></script>
     <script src="main.js"></script>

@@ -11,6 +11,7 @@ const vm = require('vm');
 const PROJECT_ROOT = path.join(__dirname, '..');
 const MAIN_JS_PATH = path.join(PROJECT_ROOT, 'frontend', 'main.js');
 const VIEW_UTILS_PATH = path.join(PROJECT_ROOT, 'shared', 'view_utils.js');
+const DECIMAL_PATH = path.join(PROJECT_ROOT, 'shared', 'libs', 'decimal.min.js');
 
 // Mock DOM API
 const document = {
@@ -86,9 +87,14 @@ if (!fs.existsSync(VIEW_UTILS_PATH)) {
     console.error(`Error: Could not find ${VIEW_UTILS_PATH}`);
     process.exit(1);
 }
+if (!fs.existsSync(DECIMAL_PATH)) {
+    console.error(`Error: Could not find ${DECIMAL_PATH}`);
+    process.exit(1);
+}
 
 let mainJsContent = fs.readFileSync(MAIN_JS_PATH, 'utf8');
 let viewUtilsContent = fs.readFileSync(VIEW_UTILS_PATH, 'utf8');
+const decimalContent = fs.readFileSync(DECIMAL_PATH, 'utf8');
 
 // Expose variables by changing const to var so they attach to the sandbox global scope.
 // This allows us to inspect internal state that is not exported.
@@ -122,16 +128,16 @@ const sandbox = {
 sandbox.self = sandbox; // Mimic window/self so UMD attaches to sandbox
 
 vm.createContext(sandbox);
-// Run ViewUtils first to define it in global scope
+
+// 1. Run Decimal
+vm.runInContext(decimalContent, sandbox);
+// 2. Run ViewUtils (depends on Decimal)
 vm.runInContext(viewUtilsContent, sandbox);
-// Since ViewUtils attaches to 'this' (which is sandbox in runInContext) or 'self', 
-// we need to ensure it's available as 'ViewUtils'.
-// The UMD in view_utils.js does: root.ViewUtils = factory().
-// root is 'this' or 'self'.
+// 3. Run Main (depends on ViewUtils and Decimal)
 vm.runInContext(mainJsContent, sandbox);
 
 // Extract internals from sandbox
-const { state, activeTileElements } = sandbox;
+const { state, activeTileElements, Decimal } = sandbox;
 
 console.log("=== Frontend Logic Test Suite ===\n");
 
@@ -164,8 +170,8 @@ state.activeDatasetId = 'test_ds';
 state.config = { max_level: 4 };
 state.viewSize = { width: 800, height: 600 };
 state.camera.globalLevel = 0.5; 
-state.camera.x = 0.5;
-state.camera.y = 0.5;
+state.camera.x = new Decimal(0.5);
+state.camera.y = new Decimal(0.5);
 
 // Expectation:
 // Parent (L0) Opacity: 1.0 (Fixed opacity for background stability)

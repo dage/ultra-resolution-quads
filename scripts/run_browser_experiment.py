@@ -53,7 +53,7 @@ def run_experiment(dataset, hook_file, output_file, visible=False, port=8015):
             # 5. Wait for Start (Autoplay)
             print("Waiting for experience to start...")
             try:
-                page.wait_for_function("window.appState && window.appState.experience.active === true", timeout=20000)
+                page.wait_for_function("window.appState && window.appState.experience.active === true", timeout=60000)
                 print("Experience started!")
             except Exception as e:
                 print("Timed out waiting for start. (Check dataset/autoplay)")

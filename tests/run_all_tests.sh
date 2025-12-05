@@ -24,6 +24,7 @@ run_test() {
 
 run_test "Python unit tests" python -m unittest tests.test_camera_parity
 run_test "Frontend logic tests (Node)" node tests/test_frontend.js
+run_test "Precision tests (Decimal.js)" node tests/test_precision.js
 run_test "Audit path tiles (Python)" python tests/audit_path_tiles.py
 
 if [[ $status -eq 0 ]]; then

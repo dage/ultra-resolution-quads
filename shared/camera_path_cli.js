@@ -53,7 +53,7 @@ async function main() {
   const cameras = [];
   const uniqueTiles = new Set();
 
-  progresses.forEach((p) => {
+  progresses.forEach((p, idx) => {
     const cam = sampler.cameraAtProgress(p);
     if (cam) {
       cameras.push(cam);
@@ -69,8 +69,13 @@ async function main() {
 
   // Convert Set back to array of objects
   const allTiles = Array.from(uniqueTiles).map(s => {
-    const [l, x, y] = s.split('|').map(Number);
-    return { level: l, x, y };
+    const parts = s.split('|');
+    // level is integer, x and y are strings (BigInts)
+    return { 
+      level: parseInt(parts[0], 10), 
+      x: parts[1], 
+      y: parts[2] 
+    };
   });
 
   process.stdout.write(JSON.stringify({ cameras, tiles: allTiles }));

@@ -337,10 +337,14 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=2000,
     # Note: tile_size here refers to the LOGICAL size used for visibility calculations (usually 512 in frontend).
     # The physical tile_size from config is used by the renderer.
     # If we passed the smaller physical size (e.g. 256), the visibility logic would request MORE tiles.
-    camera_utils.set_camera_path(path, viewport_width=viewport_width, viewport_height=viewport_height)
     
-    # New API returns (cameras, tiles) directly from the shared JS logic
-    cams, tiles = camera_utils.cameras_at_progresses(progresses)
+    # NOTE: We use parallel camera sampling because calculating visible tiles for 2000 frames 
+    # with high-precision Decimal math in Node.js is slow (can take 10+ mins).
+    # We use the same number of workers as for rendering.
+    cams, tiles = camera_utils.cameras_at_progresses_parallel(
+        progresses, path, viewport_width, viewport_height, 512, 
+        num_workers=num_workers
+    )
     
     # Add the tiles identified by the shared logic
     for t in tiles:
