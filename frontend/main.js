@@ -373,6 +373,9 @@ function setupEventListeners() {
 
     // Mouse Interactions
     els.viewer.addEventListener('mousedown', (e) => {
+        // Prevent drag initiation if clicking on UI controls within the viewer
+        if (e.target.closest('button') || e.target.closest('.control-btn')) return;
+
         state.isDragging = true;
         state.lastMouse = { x: e.clientX, y: e.clientY };
     });
