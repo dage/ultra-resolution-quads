@@ -275,31 +275,6 @@ def load_renderer(renderer_path: str, tile_size: int, renderer_kwargs: Dict[str,
         raise TypeError(f"Failed to instantiate renderer '{renderer_path}' with args {kwargs}: {exc}") from exc
 
 
-def load_path(dataset_id: str):
-    """
-    Load the single camera path for a dataset.
-    The schema uses a lone object under the 'path' key. The file itself is optional;
-    if missing, no path is returned. Legacy 'paths' arrays are not supported.
-    """
-    path_file = os.path.join(DATA_ROOT, 'datasets', dataset_id, 'paths.json')
-    if not os.path.exists(path_file):
-        return None
-
-    with open(path_file, 'r') as f:
-        data = json.load(f)
-
-    if 'paths' in data:
-        raise ValueError(f"paths.json for dataset '{dataset_id}' must use a single 'path' object (legacy 'paths' arrays are not supported).")
-
-    if 'path' not in data:
-        raise ValueError(f"paths.json for dataset '{dataset_id}' must include a 'path' object.")
-
-    path_obj = data['path']
-    if path_obj is None:
-        return None
-    if not isinstance(path_obj, dict):
-        raise ValueError(f"paths.json for dataset '{dataset_id}' must contain an object under the 'path' key.")
-    return path_obj
 
 def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=True, num_workers=8):
     tasks = []
@@ -475,11 +450,10 @@ def main():
         
         path_data = None
         if mode == 'path':
-            try:
-                path_data = load_path(dataset_id)
-            except ValueError as exc:
-                print(f"Skipping dataset '{dataset_id}' in path mode: {exc}")
-                continue
+            path_data = render_config.get('path')
+            if not path_data:
+                print(f"Warning: Dataset '{dataset_id}' is in 'path' mode but no 'path' object found in render_config.")
+                # We continue, generated might be 0 if path is empty
 
         # Decide rendering strategy
         explicit_tiles = parse_tiles_arg(args.tiles) if args.tiles else []

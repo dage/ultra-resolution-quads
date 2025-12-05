@@ -225,15 +225,13 @@ async function loadDataset(id) {
     }
     
     // Load Paths
-    try {
-        const respPaths = await fetch(`${BASE_DATA_URI}/datasets/${id}/paths.json`);
-        const pathsData = await respPaths.json();
-        state.path = pathsData.path || null;
-        autoSelectPath();
-    } catch {
+    // New Standard: path is embedded in config.json under render_config
+    if (state.config && state.config.render_config && state.config.render_config.path) {
+        state.path = state.config.render_config.path;
+    } else {
         state.path = null;
-        autoSelectPath();
     }
+    autoSelectPath();
 
     resetCamera();
 }

@@ -21,29 +21,37 @@ VIEWPORT_HEIGHT = 1080
 DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 def load_path(dataset_path, path_id):
-    path_file = os.path.join(dataset_path, 'paths.json')
-    if not os.path.exists(path_file):
+    config_file = os.path.join(dataset_path, 'config.json')
+    if not os.path.exists(config_file):
         return None
-    with open(path_file, 'r') as f:
+    with open(config_file, 'r') as f:
         data = json.load(f)
-        if 'paths' in data:
-            return None
-
-        path_obj = data.get('path')
+        render_config = data.get('render_config', {})
+        path_obj = render_config.get('path')
+        
         if not path_obj or not isinstance(path_obj, dict):
             return None
-        if path_id is None or path_obj.get('id') == path_id:
-            return path_obj
+            
+        # If path_id is specified, we could check it, but currently we only support one path per config.
+        # So we just return it if found.
+        if path_id is not None:
+            if path_obj.get('id') != path_id:
+                # Mismatch
+                return None
+        
+        return path_obj
     return None
 
 def main():
     parser = argparse.ArgumentParser(description="Audit required tiles along a path.")
     parser.add_argument("--dataset", default="debug_quadtile", help="Dataset ID under datasets/")
-    parser.add_argument("--path-id", default=None, help="Path id to audit (default: first path)")
+    parser.add_argument("--path-id", default=None, help="Path id to audit (default: first/only path)")
     args = parser.parse_args()
 
     dataset_path = os.path.join(DATA_ROOT, 'datasets', args.dataset)
-    tiles_path = os.path.join(dataset_path, 'tiles')
+    
+    # Updated: Tiles are now directly in the dataset folder
+    tiles_path = dataset_path 
 
     if not os.path.exists(dataset_path):
         print(f"[skip] dataset not found: {dataset_path}")
@@ -51,11 +59,11 @@ def main():
 
     path_obj = load_path(dataset_path, args.path_id)
     if not path_obj:
-        print(f"[skip] path not found in {dataset_path}")
+        print(f"[skip] path not found in {dataset_path} (checked config.json)")
         sys.exit(0)
         
-    keyframes = path_obj['keyframes']
-    print(f"Auditing path: {path_obj['name']} ({len(keyframes)} keyframes)")
+    keyframes = path_obj.get('keyframes', [])
+    print(f"Auditing path: {path_obj.get('name', 'Unnamed')} ({len(keyframes)} keyframes)")
     
     missing_tiles = set()
     checked_tiles = set()
@@ -82,6 +90,7 @@ def main():
         if tile_key in checked_tiles:
             continue
         
+        # Check for tile file
         path = os.path.join(tiles_path, str(level), str(x), f"{y}.webp")
         
         if not os.path.exists(path):

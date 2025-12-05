@@ -5,6 +5,6 @@
   "renderer": "datasets.debug_quadtile.render:DebugQuadtileRenderer",
   "render_config": {
     "mode": "full",
-    "max_level": 6
+    "max_level": 5
   }
 }

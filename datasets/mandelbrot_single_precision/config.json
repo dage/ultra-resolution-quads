@@ -5,6 +5,7 @@
   "renderer": "datasets.mandelbrot_single_precision.render:MandelbrotDeepZoomRenderer",
   "supports_multithreading": false,
   "render_config": {
-    "mode": "path"
+    "mode": "full",
+    "max_level": 13
   }
 }

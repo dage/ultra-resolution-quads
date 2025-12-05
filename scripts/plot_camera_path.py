@@ -12,21 +12,23 @@ from backend import camera_utils
 DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'datasets'))
 ARTIFACTS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'artifacts'))
 
-def plot_dataset_path(path_file, dataset_id):
-    print(f"Loading path from {path_file}")
+def plot_dataset_path(config_file, dataset_id):
+    print(f"Loading config from {config_file}")
     try:
-        with open(path_file, 'r') as f:
+        with open(config_file, 'r') as f:
             data = json.load(f)
     except Exception as e:
-        print(f"Error reading {path_file}: {e}")
+        print(f"Error reading {config_file}: {e}")
         return
 
-    path_obj = data.get('path')
+    render_config = data.get('render_config', {})
+    path_obj = render_config.get('path')
+    
     if path_obj is None:
-        print(f"No path found in {dataset_id}")
+        print(f"No path found in render_config for {dataset_id}")
         return
     if not isinstance(path_obj, dict):
-        print(f"Invalid path payload in {path_file}; expected object under 'path'.")
+        print(f"Invalid path payload in {config_file}; expected object under 'path'.")
         return
 
     path_name = path_obj.get('name', 'Unnamed')
@@ -131,19 +133,19 @@ def plot_dataset_path(path_file, dataset_id):
     plt.close(fig) # Close to free memory
 
 def main():
-    # Scan for paths.json files
-    search_pattern = os.path.join(DATA_ROOT, '*', 'paths.json')
-    path_files = glob.glob(search_pattern)
+    # Scan for config.json files
+    search_pattern = os.path.join(DATA_ROOT, '*', 'config.json')
+    config_files = glob.glob(search_pattern)
     
-    if not path_files:
-        print(f"No paths found in {search_pattern}")
+    if not config_files:
+        print(f"No configs found in {search_pattern}")
         return
 
-    print(f"Found {len(path_files)} datasets.")
+    print(f"Found {len(config_files)} datasets.")
     
-    for p_file in path_files:
-        dataset_id = os.path.basename(os.path.dirname(p_file))
-        plot_dataset_path(p_file, dataset_id)
+    for c_file in config_files:
+        dataset_id = os.path.basename(os.path.dirname(c_file))
+        plot_dataset_path(c_file, dataset_id)
 
 if __name__ == "__main__":
     main()

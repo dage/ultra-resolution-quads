@@ -12,7 +12,31 @@
   },
   "supports_multithreading": true,
   "render_config": {
-    "mode": "full",
-    "max_level": 5
+    "mode": "path",
+    "max_level": 5,
+    "path": {
+      "id": "power_tower_zoom",
+      "name": "Power Tower Test Zoom",
+      "keyframes": [
+        { 
+          "camera": { 
+            "globalLevel": 0, 
+            "globalX": 0.5, 
+            "globalY": 0.5, 
+            "rotation": 0, 
+            "note": "Start: Root View" 
+          } 
+        },
+        { 
+          "camera": { 
+            "globalLevel": 10, 
+            "globalX": 0.35, 
+            "globalY": 0.43, 
+            "rotation": 6.28318,
+            "note": "End: Center of Top-Right Quadrant (Tile 1,0)" 
+          } 
+        }
+      ]
+    }
   }
 }
