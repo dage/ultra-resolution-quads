@@ -6,6 +6,10 @@
 
 const { buildSampler } = require('./camera_path');
 const ViewUtils = require('./view_utils');
+const Decimal = require('./libs/decimal.min.js');
+
+// Ensure high precision for offline tools/generation
+Decimal.set({ precision: 200 });
 
 function readStdin() {
   return new Promise((resolve) => {

@@ -12,8 +12,10 @@
     }
 }(typeof self !== 'undefined' ? self : this, function(Decimal) {
 
-  // Set high precision for deep zooms (200 digits supports > Level 600)
-  Decimal.set({ precision: 200 });
+  // Set default precision.
+  // 50 is sufficient for Level 100+ (10^-30). 
+  // For Deep Zooms (> Level 100), applications should increase this via Decimal.set().
+  Decimal.set({ precision: 50 });
 
   const clamp01 = (v) => {
       if (v.lessThan(0)) return new Decimal(0);

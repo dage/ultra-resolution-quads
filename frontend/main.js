@@ -3,7 +3,7 @@ const BASE_DATA_URI = '..';
 const LOGICAL_TILE_SIZE = 512;
 
 // Application State
-Decimal.set({ precision: 200 });
+// Decimal precision is set dynamically in loadDataset based on max_level.
 
 const state = {
     datasets: [],
@@ -209,6 +209,32 @@ async function loadDataset(id) {
     // Load Config
     const respConfig = await fetch(`${BASE_DATA_URI}/datasets/${id}/config.json`);
     state.config = await respConfig.json();
+
+    // Adjust Precision for Deep Zoom if necessary
+    // Default 50 is good for ~Level 100.
+    // Formula: digits ~= level * 0.3 + 20
+    let maxLevel = 20;
+    if (state.config.render_config && typeof state.config.render_config.max_level === 'number') {
+        maxLevel = state.config.render_config.max_level;
+    }
+
+    // Also check the path keyframes, as they dictate the actual depth during playback
+    if (state.config.render_config && state.config.render_config.path && Array.isArray(state.config.render_config.path.keyframes)) {
+        for (const kf of state.config.render_config.path.keyframes) {
+            const cam = kf.camera || kf;
+            let level = 0;
+            if (typeof cam.globalLevel === 'number') {
+                level = cam.globalLevel;
+            } else if (typeof cam.level === 'number') {
+                level = cam.level + (cam.zoomOffset || 0);
+            }
+            if (level > maxLevel) maxLevel = level;
+        }
+    }
+
+    const neededPrecision = Math.max(50, Math.ceil(maxLevel * 0.35 + 20));
+    console.log(`Dataset Max Level: ${maxLevel}. Setting Decimal precision to ${neededPrecision}.`);
+    Decimal.set({ precision: neededPrecision });
 
     // Load Tile Manifest (to avoid 404s)
     state.availableTiles.clear();
