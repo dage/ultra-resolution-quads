@@ -11,3 +11,4 @@ datasets/.DS_Store
 .DS_Store
 .env
 .numba_cache
+datasets/*/tiles.json
