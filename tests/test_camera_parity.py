@@ -24,7 +24,7 @@ class TestCameraParity(unittest.TestCase):
                 {"camera": {"level": 4, "x": 0.5, "y": 0.5}},
             ]
         }
-        camera_utils.set_camera_path(path, internal_resolution=500)
+        camera_utils.set_camera_path(path)
 
         (c0, cmid, c1), _ = camera_utils.cameras_at_progresses([0.0, 0.5, 1.0])
         
@@ -56,7 +56,7 @@ class TestCameraParity(unittest.TestCase):
         Macros should resolve to the same camera as explicit tile/offset definitions.
         """
         def sample_camera(path):
-            camera_utils.set_camera_path(path, internal_resolution=100)
+            camera_utils.set_camera_path(path)
             return camera_utils.camera_at_progress(0.0)
 
         # Global macro vs explicit

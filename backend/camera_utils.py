@@ -48,12 +48,9 @@ _project_root = Path(__file__).resolve().parents[1]
 _node_cli = _project_root / "shared" / "camera_path_cli.js"
 
 
-def set_camera_path(path, internal_resolution=2000, tension=0.0, viewport_width=1920, viewport_height=1080, tile_size=512):
+def set_camera_path(path, viewport_width=1920, viewport_height=1080, tile_size=512):
     """
     Register the active path. Sampling is delegated to the shared JS implementation.
-
-    The sampler is now a simple linear interpolator; resolution/tension are kept for
-    backward compatibility but ignored by the Node helper.
     """
     global _active_path, _active_options, _viewport_settings, _tile_size
     _active_path = path

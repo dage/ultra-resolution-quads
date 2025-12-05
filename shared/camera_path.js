@@ -1,32 +1,57 @@
 // Shared camera path sampler (frontend + backend via Node).
 // Simplified to straight linear interpolation between keyframes.
 
-(function (root, factory) {
-  if (typeof module === 'object' && module.exports) {
-    module.exports = factory();
-  } else {
-    root.CameraPath = factory();
-  }
-})(typeof self !== 'undefined' ? self : this, function () {
+(function(root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory();
+    } else {
+        root.CameraPath = factory();
+    }
+}(typeof self !== 'undefined' ? self : this, function() {
 
   const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
+  /**
+   * Centralizes all coordinate conversion logic.
+   * Input: Object with various possible coordinate properties.
+   * Output: Canonical { x, y, globalLevel, rotation }
+   */
   const normalizeCamera = (cam) => {
     if (!cam || typeof cam !== 'object') return cam;
-    const globalLevel = typeof cam.globalLevel === 'number'
-      ? cam.globalLevel
-      : (cam.level || 0) + (cam.zoomOffset || 0);
 
-    const x = typeof cam.x === 'number' ? cam.x
-      : (typeof cam.globalX === 'number' ? cam.globalX : 0.5);
-    const y = typeof cam.y === 'number' ? cam.y
-      : (typeof cam.globalY === 'number' ? cam.globalY : 0.5);
+    // 1. Calculate Global Level
+    // Priority: globalLevel > (level + zoomOffset) > level > 0
+    let globalLevel = 0;
+    if (typeof cam.globalLevel === 'number') {
+      globalLevel = cam.globalLevel;
+    } else {
+      const lvl = typeof cam.level === 'number' ? cam.level : 0;
+      const off = typeof cam.zoomOffset === 'number' ? cam.zoomOffset : 0;
+      globalLevel = lvl + off;
+    }
+
+    // 2. Calculate X / Y
+    // Priority: x/y > globalX/globalY > 0.5
+    let x = 0.5;
+    let y = 0.5;
+
+    if (typeof cam.x === 'number') {
+      x = cam.x;
+    } else if (typeof cam.globalX === 'number') {
+      x = cam.globalX;
+    }
+
+    if (typeof cam.y === 'number') {
+      y = cam.y;
+    } else if (typeof cam.globalY === 'number') {
+      y = cam.globalY;
+    }
 
     return {
-      globalLevel,
+      globalLevel: globalLevel,
       x: clamp01(x),
       y: clamp01(y),
-      rotation: cam.rotation || 0
+      rotation: typeof cam.rotation === 'number' ? cam.rotation : 0
     };
   };
 
@@ -39,13 +64,10 @@
   };
 
   const resolveGlobalMacro = (cam) => {
+    // This is essentially a pass-through to normalizeCamera since it handles globalX/Y
+    // But we check for existence to be safe.
     if (typeof cam.globalX !== 'number' || typeof cam.globalY !== 'number') return null;
-    return normalizeCamera({
-      globalLevel: cam.globalLevel || (cam.level || 0) + (cam.zoomOffset || 0),
-      x: clamp01(cam.globalX),
-      y: clamp01(cam.globalY),
-      rotation: cam.rotation || 0
-    });
+    return normalizeCamera(cam);
   };
 
   const resolveMandelbrotMacro = (cam) => {
@@ -53,27 +75,36 @@
     const { centerRe, centerIm, width, height } = MANDELBROT_BOUNDS;
     const minRe = centerRe - width / 2;
     const maxIm = centerIm + height / 2;
-    const gx = clamp01((cam.re - minRe) / width);
-    const gy = clamp01((maxIm - cam.im) / height); // invert because tileY grows downward
+    
+    // Calculate normalized coordinates
+    const gx = (cam.re - minRe) / width;
+    const gy = (maxIm - cam.im) / height; // invert because tileY grows downward
+
+    // Construct a temporary object to feed into normalizeCamera
+    // We preserve other props like level/zoomOffset/rotation
     return normalizeCamera({
-      globalLevel: cam.globalLevel || (cam.level || 0) + (cam.zoomOffset || 0),
+      ...cam,
       x: gx,
-      y: gy,
-      rotation: cam.rotation || 0
+      y: gy
+      // globalX/Y are ignored by normalizeCamera if x/y are present
     });
   };
 
   const resolveCameraMacros = (cam) => {
     if (!cam || typeof cam !== 'object') return cam;
     const macro = cam.macro;
-    if (macro === 'global' || (cam.globalX !== undefined && cam.globalY !== undefined)) {
-      const res = resolveGlobalMacro(cam);
-      if (res) return res;
-    }
+    
     if (macro === 'mandelbrot' || macro === 'mandelbrot_point' || macro === 'mb') {
       const res = resolveMandelbrotMacro(cam);
       if (res) return res;
     }
+    
+    // Explicit global macro or implied by globalX/Y
+    if (macro === 'global' || (cam.globalX !== undefined && cam.globalY !== undefined)) {
+      const res = resolveGlobalMacro(cam);
+      if (res) return res;
+    }
+    
     return normalizeCamera(cam);
   };
 
@@ -83,7 +114,7 @@
     const dx = (p1.x - p2.x) * scale;
     const dy = (p1.y - p2.y) * scale;
     const dl = (p1.globalLevel - p2.globalLevel);
-    const dr = ((p1.rotation || 0) - (p2.rotation || 0));
+    const dr = (p1.rotation - p2.rotation); // rotation is guaranteed 0 if undefined by normalize
     return Math.sqrt(dx * dx + dy * dy + dl * dl + dr * dr);
   };
 
@@ -136,7 +167,7 @@
         globalLevel: level,
         x: clamp01(x),
         y: clamp01(y),
-        rotation: (a.rotation || 0) + ((b.rotation || 0) - (a.rotation || 0)) * t
+        rotation: a.rotation + (b.rotation - a.rotation) * t
       };
     };
 
@@ -172,4 +203,4 @@
   }
 
   return { buildSampler, resolvePathMacros };
-});
+}));

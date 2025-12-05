@@ -35,7 +35,7 @@ def plot_dataset_path(config_file, dataset_id):
     print(f"Analyzing path: {path_name} ({dataset_id})")
     
     # Setup Sampler
-    camera_utils.set_camera_path(path_obj, internal_resolution=2000)
+    camera_utils.set_camera_path(path_obj)
     
     steps = 500
     dt = 1.0 / steps

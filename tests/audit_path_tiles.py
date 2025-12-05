@@ -74,7 +74,7 @@ def main():
     progresses = [i / TOTAL_STEPS for i in range(TOTAL_STEPS + 1)]
     
     print("Calculating required tiles using Production Logic (ViewUtils)...")
-    camera_utils.set_camera_path(path_obj, internal_resolution=TOTAL_STEPS, tension=0.0)
+    camera_utils.set_camera_path(path_obj)
     
     # Bulk retrieve (cameras, tiles)
     _, required_tiles_list = camera_utils.cameras_at_progresses(progresses)
