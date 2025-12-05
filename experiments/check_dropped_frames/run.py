@@ -10,8 +10,73 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 RUNNER_SCRIPT = PROJECT_ROOT / "scripts" / "run_browser_experiment.py"
 HOOK_FILE = Path(__file__).parent / "hook.js"
 OUTPUT_FILE = PROJECT_ROOT / "artifacts" / "check_dropped_frames" / "timestamps.json"
+HTML_OUTPUT_FILE = PROJECT_ROOT / "artifacts" / "check_dropped_frames" / "report.html"
 
-def analyze_frames(timestamps_file):
+def generate_html_report(stats, worst_drops, output_path):
+    rows = ""
+    for drop in worst_drops:
+        rows += f"<tr><td>{drop['delta']:.2f} ms</td><td>{drop['time']:.2f} s</td></tr>"
+    
+    if not rows:
+        rows = "<tr><td colspan='2'>No significant drops detected.</td></tr>"
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Frame Drop Analysis: {stats['dataset']}</title>
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #333; }}
+            h1 {{ border-bottom: 2px solid #eee; padding-bottom: 0.5rem; }}
+            .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }}
+            .card {{ background: #f9f9f9; padding: 1rem; border-radius: 8px; border: 1px solid #eee; }}
+            .card strong {{ display: block; font-size: 0.875rem; color: #666; margin-bottom: 0.25rem; }}
+            .card span {{ font-size: 1.25rem; font-weight: 600; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 1rem; }}
+            th, td {{ text-align: left; padding: 0.75rem; border-bottom: 1px solid #eee; }}
+            th {{ background: #f1f1f1; }}
+            .warning {{ color: #d32f2f; }}
+        </style>
+    </head>
+    <body>
+        <h1>Frame Analysis Report</h1>
+        <p>Dataset: <strong>{stats['dataset']}</strong></p>
+        
+        <div class="grid">
+            <div class="card"><strong>Total Frames</strong><span>{stats['total_frames']}</span></div>
+            <div class="card"><strong>Duration</strong><span>{stats['duration']:.2f} s</span></div>
+            <div class="card"><strong>Est. FPS</strong><span>{stats['target_fps']:.1f}</span></div>
+            <div class="card"><strong>Mean Frame Time</strong><span>{stats['mean_delta']:.2f} ms</span></div>
+            <div class="card"><strong>Std Dev</strong><span>{stats['std_dev']:.2f} ms</span></div>
+            <div class="card"><strong>Dropped Frames</strong><span class="{ 'warning' if stats['num_dropped'] > 0 else '' }">{stats['num_dropped']}</span></div>
+        </div>
+
+        <h2>Worst Frame Drops</h2>
+        <p>Threshold: &gt; {stats['threshold']:.1f} ms</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Frame Time (Delta)</th>
+                    <th>Time into Playback</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+    try:
+        with open(output_path, 'w') as f:
+            f.write(html_content)
+        print(f"HTML report generated: {output_path}")
+    except Exception as e:
+        print(f"Failed to write HTML report: {e}")
+
+def analyze_frames(timestamps_file, dataset_name):
     with open(timestamps_file, 'r') as f:
         timestamps = json.load(f)
     
@@ -56,16 +121,40 @@ def analyze_frames(timestamps_file):
     print(f"Min/Max Delta:     {min_delta:.2f} ms / {max_delta:.2f} ms")
     print("-" * 40)
     print(f"DROPPED FRAMES (> {threshold:.1f} ms): {num_dropped}")
+    
+    worst_drops = []
     if num_dropped > 0:
         print(f"Worst Drops:")
         # Sort dropped frames by severity
         drops = deltas[dropped_indices]
         sorted_drop_indices = dropped_indices[np.argsort(drops)][::-1]
         
-        for i in sorted_drop_indices[:5]: # Show top 5
-            t_occurrence = timestamps[i+1] - timestamps[0]
-            print(f"  - {deltas[i]:.2f} ms at {t_occurrence/1000:.2f}s into playback")
+        for i in sorted_drop_indices[:10]: # Collect top 10 for report
+            t_occurrence = (timestamps[i+1] - timestamps[0]) / 1000.0
+            worst_drops.append({
+                'delta': deltas[i],
+                'time': t_occurrence
+            })
+            # Print top 5 to console
+            if len(worst_drops) <= 5:
+                print(f"  - {deltas[i]:.2f} ms at {t_occurrence:.2f}s into playback")
     print("-" * 40)
+
+    # Prepare stats for HTML report
+    stats = {
+        'dataset': dataset_name,
+        'total_frames': len(timestamps),
+        'duration': (arr[-1] - arr[0]) / 1000,
+        'target_fps': target_fps,
+        'mean_delta': mean_delta,
+        'std_dev': std_dev,
+        'min_delta': min_delta,
+        'max_delta': max_delta,
+        'num_dropped': num_dropped,
+        'threshold': threshold
+    }
+    
+    generate_html_report(stats, worst_drops, HTML_OUTPUT_FILE)
 
 def main():
     parser = argparse.ArgumentParser(description="Run browser experiment and analyze frame drops.")
@@ -93,7 +182,7 @@ def main():
 
     # 2. Analyze Results
     print("\nAnalyzing results...")
-    analyze_frames(OUTPUT_FILE)
+    analyze_frames(OUTPUT_FILE, args.dataset)
 
 if __name__ == "__main__":
     main()
