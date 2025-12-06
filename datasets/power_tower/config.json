@@ -13,7 +13,6 @@
   "supports_multithreading": true,
   "render_config": {
     "mode": "path",
-    "max_level": 5,
     "path": {
       "id": "power_tower_zoom",
       "name": "Power Tower Test Zoom",

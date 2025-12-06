@@ -2,7 +2,7 @@
   "id": "glossy_seahorse",
   "name": "Glossy Seahorse",
   "description": "Mandelbrot with 3D lighting (Glossy Seahorse), based on Power Tower settings.",
-  "tile_size": 128,
+  "tile_size": 1024,
   "renderer": "datasets.glossy_seahorse.render:GlossySeahorseRenderer",
   "renderer_args": {
       "root_x": -0.746223962861,
@@ -13,7 +13,6 @@
   "supports_multithreading": true,
   "render_config": {
     "mode": "path",
-    "max_level": 5,
     "path": {
       "id": "glossy_seahorse_zoom",
       "name": "Glossy Seahorse Test Zoom (Power Tower Path)",
@@ -29,7 +28,7 @@
         },
         { 
           "camera": { 
-            "globalLevel": 64, 
+            "globalLevel": 70, 
             "globalX": "0.480010022986938691947", 
             "globalY": "0.429800000991848315944", 
             "rotation": 31.4,
