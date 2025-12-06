@@ -103,6 +103,7 @@ We provide a generic Python runner to automate experiments using these hooks.
         --output artifacts/my_results.json
     ```
 3.  The runner will launch the browser, inject your hook, autoplay the dataset's path, and save the collected `window.telemetryData` to the JSON output file.
+4.  If your hook needs to flush a final summary after playback, expose an optional `window.emitTextContentTelemetryNow()` (or similar) and the runner will call it before reading `telemetryData`.
 
 ## 📖 Documentation
 

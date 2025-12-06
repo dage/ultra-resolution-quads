@@ -34,8 +34,9 @@ def run_experiment(dataset, hook_file, output_file, visible=False, port=8015):
             context = browser.new_context(viewport={"width": 1920, "height": 1080})
             page = context.new_page()
             
-            # Enable console logging from the browser
-            page.on("console", lambda msg: print(f"BROWSER_CONSOLE: {msg.text}"))
+            # Enable console logging from the browser with type/location for easier debugging
+            page.on("console", lambda msg: print(f"BROWSER_CONSOLE[{msg.type.upper()}] {msg.text} ({msg.location.get('url','')}:{msg.location.get('lineNumber','')})"))
+            page.on("pageerror", lambda exc: print(f"BROWSER_ERROR: {exc}"))
 
             # 3. Inject the Custom Hook
             # We prepend a safety check to ensure telemetryData exists if the user didn't define it
@@ -49,6 +50,8 @@ def run_experiment(dataset, hook_file, output_file, visible=False, port=8015):
             url = f"http://localhost:{port}/frontend/index.html?dataset={dataset}&autoplay=true"
             print(f"Navigating to {url}")
             page.goto(url)
+            # Wait for app to be ready enough to expose appState
+            page.wait_for_function("window.appState !== undefined", timeout=30000)
             
             # 5. Wait for Start (Autoplay)
             print("Waiting for experience to start...")
@@ -66,6 +69,13 @@ def run_experiment(dataset, hook_file, output_file, visible=False, port=8015):
             print("Experience finished!")
 
             # 7. Extract Data
+            page.evaluate("""
+                if (!window.telemetryData) window.telemetryData = [];
+                if (typeof window.emitTextContentTelemetryNow === 'function') {
+                    try { window.emitTextContentTelemetryNow(); } catch (e) { console.error(e); }
+                }
+                window.telemetryData;
+            """)
             print("Extracting 'window.telemetryData'...")
             data = page.evaluate("window.telemetryData")
             
