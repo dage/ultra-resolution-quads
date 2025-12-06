@@ -1,4 +1,5 @@
 const ViewUtils = require('../shared/view_utils.js');
+const Decimal = require('../shared/libs/decimal.min.js');
 const assert = require('assert');
 
 console.log("Running ViewUtils Tests...");
@@ -21,7 +22,7 @@ runTest("Case 1: Zoomed Out (Viewport larger than World)", () => {
     // View: 1000x1000px
     // Result: Should clamp to just the one tile (0,0)
     
-    const camera = { x: 0.5, y: 0.5, globalLevel: 0 };
+    const camera = { x: new Decimal(0.5), y: new Decimal(0.5), globalLevel: 0 };
     const result = ViewUtils.getVisibleTilesForLevel(
         camera, 
         0,      // target level
@@ -31,8 +32,8 @@ runTest("Case 1: Zoomed Out (Viewport larger than World)", () => {
     );
 
     assert.strictEqual(result.tiles.length, 1, "Should only load 1 tile");
-    assert.strictEqual(result.tiles[0].x, 0);
-    assert.strictEqual(result.tiles[0].y, 0);
+    assert.strictEqual(result.tiles[0].x, '0');
+    assert.strictEqual(result.tiles[0].y, '0');
 });
 
 runTest("Case 2: Standard Grid (Radius Calculation)", () => {
@@ -52,7 +53,7 @@ runTest("Case 2: Standard Grid (Radius Calculation)", () => {
     // Count per axis: 517 - 507 + 1 = 11.
     // Total tiles: 11 * 11 = 121.
 
-    const camera = { x: 0.5, y: 0.5, globalLevel: 10 };
+    const camera = { x: new Decimal(0.5), y: new Decimal(0.5), globalLevel: 10 };
     const result = ViewUtils.getVisibleTilesForLevel(
         camera, 
         10,     // target level
@@ -64,17 +65,17 @@ runTest("Case 2: Standard Grid (Radius Calculation)", () => {
     const minX = 507, maxX = 517;
     const minY = 507, maxY = 517;
     
-    const rangeX = result.maxX - result.minX + 1;
-    const rangeY = result.maxY - result.minY + 1;
+    const rangeX = BigInt(result.maxX) - BigInt(result.minX) + 1n;
+    const rangeY = BigInt(result.maxY) - BigInt(result.minY) + 1n;
 
-    assert.strictEqual(result.minX, minX, `MinX should be ${minX}, got ${result.minX}`);
-    assert.strictEqual(result.maxX, maxX, `MaxX should be ${maxX}, got ${result.maxX}`);
+    assert.strictEqual(result.minX, minX.toString(), `MinX should be ${minX}, got ${result.minX}`);
+    assert.strictEqual(result.maxX, maxX.toString(), `MaxX should be ${maxX}, got ${result.maxX}`);
     
     // Efficiency Check: Ensure we aren't loading a huge excess
     // 11x11 grid for a 8x6 viewport (radius based) is acceptable.
     // If it were 13x13 or larger, that would be inefficient padding.
-    assert.ok(rangeX <= 11, `Horizontal tile span ${rangeX} is too large (max 11 expected)`);
-    assert.ok(rangeY <= 11, `Vertical tile span ${rangeY} is too large (max 11 expected)`);
+    assert.ok(rangeX <= 11n, `Horizontal tile span ${rangeX} is too large (max 11 expected)`);
+    assert.ok(rangeY <= 11n, `Vertical tile span ${rangeY} is too large (max 11 expected)`);
 
     // With circular crop optimization, we expect fewer than 121 (11x11).
     // Radius in tiles ~5.0.
@@ -124,7 +125,7 @@ runTest("Case 3: Deep Zoom (Different Global vs Target Level)", () => {
     // Range: 0 to 1.
     // Expect all 4 tiles of Level 1 (0,0 to 1,1).
     
-    const camera = { x: 0.5, y: 0.5, globalLevel: 2 };
+    const camera = { x: new Decimal(0.5), y: new Decimal(0.5), globalLevel: 2 };
     const result = ViewUtils.getVisibleTilesForLevel(
         camera, 
         1,      // target level 1
@@ -133,10 +134,10 @@ runTest("Case 3: Deep Zoom (Different Global vs Target Level)", () => {
         256     // tile size
     );
     
-    assert.strictEqual(result.minX, 0);
-    assert.strictEqual(result.maxX, 1);
-    assert.strictEqual(result.minY, 0);
-    assert.strictEqual(result.maxY, 1);
+    assert.strictEqual(result.minX, '0');
+    assert.strictEqual(result.maxX, '1');
+    assert.strictEqual(result.minY, '0');
+    assert.strictEqual(result.maxY, '1');
     assert.strictEqual(result.tiles.length, 4, "Should load all 4 tiles of level 1");
 });
 
@@ -145,7 +146,7 @@ runTest("Case 4: Off-Center Camera (Edge Clamping)", () => {
     // Viewport small (radius ~ 1 tile)
     // Camera at 0,0 (Top Left corner)
     
-    const camera = { x: 0, y: 0, globalLevel: 5 };
+    const camera = { x: new Decimal(0), y: new Decimal(0), globalLevel: 5 };
     const viewSize = 256; // Radius ~ 181px. TileSize 256. Radius < 1 tile.
     // Radius Global approx 1 tile width / 2^5.
     // Range should be [-R, +R].
@@ -158,8 +159,8 @@ runTest("Case 4: Off-Center Camera (Edge Clamping)", () => {
         256
     );
     
-    assert.strictEqual(result.minX, 0);
-    assert.strictEqual(result.minY, 0);
+    assert.strictEqual(result.minX, '0');
+    assert.strictEqual(result.minY, '0');
     // Max might be 0 or 1 depending on exact float math, likely 0 since radius < 1 tile size
     // Radius px = 181. Tile on screen = 256.
     // Radius < 1 tile.
@@ -167,8 +168,8 @@ runTest("Case 4: Off-Center Camera (Edge Clamping)", () => {
     // Floor(0.7) = 0.
     // Tiles: 0 to 0.
     
-    assert.strictEqual(result.maxX, 0);
-    assert.strictEqual(result.maxY, 0);
+    assert.strictEqual(result.maxX, '0');
+    assert.strictEqual(result.maxY, '0');
     assert.strictEqual(result.tiles.length, 1);
 });
 

@@ -776,6 +776,8 @@ function updateLayer(level, opacity, targetTiles) {
     const tileSize = LOGICAL_TILE_SIZE;
     const displayScale = Math.pow(2, state.camera.globalLevel - level);
     const tileSizeOnScreen = tileSize * displayScale;
+    const centerX = state.viewSize.width / 2;
+    const centerY = state.viewSize.height / 2;
 
     // Center of the world in global coords is state.camera.x, state.camera.y
     // We need to compute screen position for each tile.
@@ -799,17 +801,9 @@ function updateLayer(level, opacity, targetTiles) {
 
         const key = `${state.activeDatasetId}|${level}|${x}|${y}`;
         
-        // Calculate screen position
-        // Convert tile index string to Decimal, subtract camera pos, then convert to Number for screen layout
-        // This maintains precision because the difference is small (within viewport)
-        const tX = new Decimal(x);
-        const tY = new Decimal(y);
-        
-        const distX = tX.minus(camX_T).toNumber();
-        const distY = tY.minus(camY_T).toNumber();
-        
-        const screenX = state.viewSize.width/2 + distX * tileSizeOnScreen;
-        const screenY = state.viewSize.height/2 + distY * tileSizeOnScreen;
+        // Screen position using precomputed relX/relY from getVisibleTilesForLevel.
+        const screenX = centerX + (t.relX * tileSizeOnScreen);
+        const screenY = centerY + (t.relY * tileSizeOnScreen);
         
         targetTiles.set(key, {
             datasetId: state.activeDatasetId,

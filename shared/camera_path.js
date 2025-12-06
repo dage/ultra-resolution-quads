@@ -164,61 +164,97 @@
     }
 
     const cumulative = [0];
+    const segments = [];
     let total = 0;
+    
     for (let i = 1; i < cams.length; i++) {
-      const d = visualDist(cams[i - 1], cams[i]);
+      const c1 = cams[i - 1];
+      const c2 = cams[i];
+      const d = visualDist(c1, c2);
       total += d;
       cumulative.push(total);
+
+      // Pre-calculate segment data for optimization
+      segments.push({
+          startCam: c1,
+          endCam: c2,
+          deltaX: c2.x.minus(c1.x),
+          deltaY: c2.y.minus(c1.y),
+          deltaLevel: c2.globalLevel - c1.globalLevel,
+          deltaRot: c2.rotation - c1.rotation,
+          length: d
+      });
     }
 
-    const interpolate = (a, b, t) => {
-      const level = a.globalLevel + (b.globalLevel - a.globalLevel) * t;
-      
-      // We use Decimal for weights to preserve precision during interpolation
-      const w1 = Decimal.pow(2, a.globalLevel);
-      const w2 = Decimal.pow(2, b.globalLevel);
-      const w_t = Decimal.pow(2, level);
+    // Optimized interpolate using pre-calculated segment
+    const interpolate = (segment, t) => {
+      // 1. Linear Level Interpolation
+      const currentLevel = segment.startCam.globalLevel + segment.deltaLevel * t;
 
-      let alpha;
-      // Check equality with small epsilon, but w1/w2 are Decimals
-      if (w2.minus(w1).abs().lessThan(1e-9)) {
-        alpha = new Decimal(t); // pure pan
+      // 2. Calculate u (The Curve Factor)
+      // We use a Hybrid approach to allow using standard Math.pow (fast) 
+      // while maintaining Decimal precision for the final coordinate.
+      let u, v;
+      const useEndAnchor = Math.abs(segment.deltaLevel) > 1e-6 && (segment.startCam.globalLevel - currentLevel) < -1;
+
+      if (Math.abs(segment.deltaLevel) < 1e-6) {
+        // Pure Pan
+        u = t;
+        v = 1 - t;
       } else {
-        // alpha = (w_t - w1) / (w2 - w1)
-        alpha = w_t.minus(w1).div(w2.minus(w1));
+        const diffCurrent = segment.startCam.globalLevel - currentLevel;
+        const diffEnd = -segment.deltaLevel;
+        const powCurrent = Math.pow(2, diffCurrent);
+        const powEnd = Math.pow(2, diffEnd);
+        
+        // Denominator is common
+        const denom = 1 - powEnd;
+
+        if (!useEndAnchor) {
+             // Early Zoom (first 1 level): u is small/moderate.
+             // u = (1 - 2^diffCurrent) / (1 - 2^diffEnd)
+             u = (1 - powCurrent) / denom;
+        } else {
+             // Deep Zoom: u is close to 1. v is small.
+             // v = 1 - u = (2^diffCurrent - 2^diffEnd) / (1 - 2^diffEnd)
+             v = (powCurrent - powEnd) / denom;
+        }
       }
 
-      // h1x = a.x * w1
-      const h1x = a.x.times(w1);
-      const h1y = a.y.times(w1);
-      const h2x = b.x.times(w2);
-      const h2y = b.y.times(w2);
-
-      // htx = h1x * (1 - alpha) + h2x * alpha
-      const oneMinusAlpha = new Decimal(1).minus(alpha);
-      const htx = h1x.times(oneMinusAlpha).plus(h2x.times(alpha));
-      const hty = h1y.times(oneMinusAlpha).plus(h2y.times(alpha));
-      
-      // htw = w1 * (1 - alpha) + w2 * alpha
-      const htw = w1.times(oneMinusAlpha).plus(w2.times(alpha));
-
-      const x = htw.isZero() ? a.x : htx.div(htw);
-      const y = htw.isZero() ? a.y : hty.div(htw);
+      // 3. Calculate Position
+      let x, y;
+      if (!useEndAnchor && Math.abs(segment.deltaLevel) > 1e-6) {
+           // Anchor: Start
+           // x = start + delta * u
+           x = segment.startCam.x.plus(segment.deltaX.times(u));
+           y = segment.startCam.y.plus(segment.deltaY.times(u));
+      } else if (useEndAnchor) {
+           // Anchor: End
+           // x = end - delta * v
+           x = segment.endCam.x.minus(segment.deltaX.times(v));
+           y = segment.endCam.y.minus(segment.deltaY.times(v));
+      } else {
+           // Pan (Linear) - use start
+           x = segment.startCam.x.plus(segment.deltaX.times(u));
+           y = segment.startCam.y.plus(segment.deltaY.times(u));
+      }
+      const rot = segment.startCam.rotation + segment.deltaRot * t;
 
       return {
-        globalLevel: level,
+        globalLevel: currentLevel,
         x: clamp01(x),
         y: clamp01(y),
-        rotation: a.rotation + (b.rotation - a.rotation) * t
+        rotation: rot
       };
     };
 
     const cameraAtProgress = (p) => {
       if (total === 0) return { ...cams[0] };
-      // p is standard number 0-1
+      
       let p_clamped = Math.min(1, Math.max(0, p));
       const target = p_clamped * total;
 
+      // Binary search could be faster for huge paths, but linear scan is fine for <100 keyframes
       let idx = cumulative.findIndex(c => c >= target);
       if (idx === -1) idx = cumulative.length - 1;
       if (idx === 0) idx = 1;
@@ -227,14 +263,18 @@
       const segDist = cumulative[idx] - prevDist;
       const t = segDist === 0 ? 0 : (target - prevDist) / segDist;
 
-      return interpolate(cams[idx - 1], cams[idx], t);
+      // Segments array is 0-indexed (segment 0 is between cams 0 and 1)
+      // So segment index is idx - 1
+      return interpolate(segments[idx - 1], t);
     };
 
     return {
       cameraAtProgress,
       pointAtProgress: cameraAtProgress,
       totalLength: total,
-      stops: cumulative
+      stops: cumulative,
+      // Expose segments for debugging if needed
+      _segments: segments
     };
   }
 

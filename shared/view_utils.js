@@ -28,104 +28,113 @@
      * @returns {Object} { minX, maxX, minY, maxY, tiles: [] } -> x/y are BigInt or String
      */
     function getVisibleTilesForLevel(camera, targetLevel, viewWidth, viewHeight, tileSize) {
-        const t0 = Date.now();
-        
-        // 1. Calculate Half-Diagonal (Radius) of the Viewport in Pixels
+        // 1. Screen Space Setup (Float Math)
+        // We calculate the search radius in "Tile Units" for the target level.
         const viewRadiusPx = Math.sqrt((viewWidth/2)**2 + (viewHeight/2)**2);
+        
+        // Scale of the target level relative to the current view
+        // displayScale = (Size of Target Level Tile in Pixels) / (Size of Logical Tile)
+        // If targetLevel == globalLevel, scale = 1.
+        // If targetLevel < globalLevel (zoomed in), scale < 1 (target tiles are huge? No wait).
+        // globalLevel = 10. targetLevel = 9.
+        // World Size L10 = 1024 * tileSize.
+        // World Size L9 = 512 * tileSize.
+        // Screen shows L10 size.
+        // L9 tile covers 2x L10 tiles.
+        // So L9 tile is 2x bigger on screen.
+        // displayScale = 2^(global - target).
+        const zoomDiff = camera.globalLevel - targetLevel;
+        const displayScale = Math.pow(2, zoomDiff);
+        const tileSizeOnScreen = tileSize * displayScale;
+        
+        // How many tiles extend from the center to cover the viewport radius?
+        const radiusInTiles = viewRadiusPx / tileSizeOnScreen;
+        
+        // Add a safe buffer for rotation and rounding
+        // Old logic used floor(center - radius) which is roughly center - ceil(radius)
+        const searchRadius = Math.ceil(radiusInTiles);
+        
+        if (searchRadius > 50) console.error(`WARNING: Massive loop detected at Level ${targetLevel}: Radius ${searchRadius}`);
 
-        // 2. Calculate Global Units per Pixel
-        const worldSizePx = Decimal.pow(2, camera.globalLevel).times(tileSize);
-        const globalUnitsPerPixel = new Decimal(1).div(worldSizePx);
+        const radiusSq = (radiusInTiles + 0.75) ** 2; // Matching original buffer logic logic
 
-        // 3. Calculate Radius in Global Units
-        const radiusGlobal = globalUnitsPerPixel.times(viewRadiusPx);
-
-        // 4. Determine Bounds in Global Coordinates
-        const minGx = camera.x.minus(radiusGlobal);
-        const maxGx = camera.x.plus(radiusGlobal);
-        const minGy = camera.y.minus(radiusGlobal);
-        const maxGy = camera.y.plus(radiusGlobal);
-
-        // 5. Convert to Tile Coordinates at Target Level
+        // 2. Global Anchor (High Precision)
+        // We only do BigInt/Decimal math ONCE to find the center tile and offset.
         const levelScale = Decimal.pow(2, targetLevel);
         
-        const minTx = minGx.times(levelScale);
-        const maxTx = maxGx.times(levelScale);
-        const minTy = minGy.times(levelScale);
-        const maxTy = maxGy.times(levelScale);
-
-        // 6. Determine Integer Tile Bounds
-        const limit = Decimal.pow(2, targetLevel);
-        
-        const startX_dec = minTx.floor();
-        const endX_dec   = maxTx.floor();
-        const startY_dec = minTy.floor();
-        const endY_dec   = maxTy.floor();
-        
-        const zero = new Decimal(0);
-        const maxIdx = limit.minus(1);
-
-        const startX = startX_dec.lessThan(zero) ? zero : startX_dec;
-        const endX   = endX_dec.greaterThan(maxIdx) ? maxIdx : endX_dec;
-        const startY = startY_dec.lessThan(zero) ? zero : startY_dec;
-        const endY   = endY_dec.greaterThan(maxIdx) ? maxIdx : endY_dec;
-
-        // Check bounds size
-        const diffX = endX.minus(startX).toNumber();
-        const diffY = endY.minus(startY).toNumber();
-        if (diffX > 100 || diffY > 100) console.error(`WARNING: Massive loop detected at Level ${targetLevel}: ${diffX}x${diffY}`);
-
-        // Optimization: Radius in tile units for circular crop
-        const radiusInTiles = radiusGlobal.times(levelScale);
+        // Center position in Tile Coordinates
         const centerTx = camera.x.times(levelScale);
         const centerTy = camera.y.times(levelScale);
-        
-        // Calculate radius squared in standard number (it's small, ~2-3 tiles)
-        // Add buffer (0.75)
-        const radiusSq_num = (radiusInTiles.toNumber() + 0.75) ** 2;
-
-        const startX_bi = BigInt(startX.toFixed(0));
-        const endX_bi   = BigInt(endX.toFixed(0));
-        const startY_bi = BigInt(startY.toFixed(0));
-        const endY_bi   = BigInt(endY.toFixed(0));
-        
-        // Optimize Loop:
-        // We need (x + 0.5 - centerTx)^2 + (y + 0.5 - centerTy)^2 < r^2
-        // x is BigInt. centerTx is Decimal.
-        // Let centerTx_bi = BigInt(centerTx.floor())
-        // Let centerTx_frac = centerTx.minus(centerTx_bi).toNumber()
-        // dist = (x - centerTx_bi) + 0.5 - centerTx_frac
         
         const centerTx_dec_floor = centerTx.floor();
         const centerTy_dec_floor = centerTy.floor();
         
+        // The integer tile index of the camera
         const centerTx_bi = BigInt(centerTx_dec_floor.toFixed(0));
         const centerTy_bi = BigInt(centerTy_dec_floor.toFixed(0));
         
-        const centerTx_frac = centerTx.minus(centerTx_dec_floor).toNumber();
-        const centerTy_frac = centerTy.minus(centerTy_dec_floor).toNumber();
+        // The fractional offset within that tile [0, 1)
+        const offsetX = centerTx.minus(centerTx_dec_floor).toNumber();
+        const offsetY = centerTy.minus(centerTy_dec_floor).toNumber();
 
+        // 3. Relative Loop (Fast Integer Math)
         const tiles = [];
+        const limit = (1n << BigInt(targetLevel)) - 1n; // Max valid index
         
-        for (let x = startX_bi; x <= endX_bi; x++) {
-            // Convert BigInt difference to Number (safe because viewport is small)
-            const diffX = Number(x - centerTx_bi);
-            const distX = diffX + 0.5 - centerTx_frac;
+        // Track bounds for legacy return format
+        let minX_bi = null, maxX_bi = null, minY_bi = null, maxY_bi = null;
+
+        for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+            // Distance from camera to tile center (X axis)
+            // Tile Center X = (centerTx_bi + dx) + 0.5
+            // Camera X      = centerTx_bi + offsetX
+            // Dist          = dx + 0.5 - offsetX
+            const distX = dx + 0.5 - offsetX;
             const distX2 = distX * distX;
 
-            for (let y = startY_bi; y <= endY_bi; y++) {
-                const diffY = Number(y - centerTy_bi);
-                const distY = diffY + 0.5 - centerTy_frac;
+            // Optimization: Pre-check X range before inner loop
+            if (distX2 > radiusSq && Math.abs(distX) > radiusInTiles + 1) continue; 
+            // (The secondary check handles the fact that the circle might be wide, 
+            // but simple dist2 check handles most)
+
+            for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+                const distY = dy + 0.5 - offsetY;
                 
-                if (distX2 + distY * distY < radiusSq_num) {
-                    tiles.push({ level: targetLevel, x: x.toString(), y: y.toString() });
+                if (distX2 + distY * distY < radiusSq) {
+                    // 4. Lazy Reconstruction (BigInt) & Bounds Check
+                    const x = centerTx_bi + BigInt(dx);
+                    const y = centerTy_bi + BigInt(dy);
+                    
+                    // Wrap or Clamp? The project seems to clamp (based on previous code)
+                    // Previous code: clamped startX/endX to 0..limit
+                    if (x < 0n || x > limit || y < 0n || y > limit) {
+                        continue;
+                    }
+
+                    // Update Bounds (for legacy support)
+                    if (minX_bi === null || x < minX_bi) minX_bi = x;
+                    if (maxX_bi === null || x > maxX_bi) maxX_bi = x;
+                    if (minY_bi === null || y < minY_bi) minY_bi = y;
+                    if (maxY_bi === null || y > maxY_bi) maxY_bi = y;
+
+                    tiles.push({ 
+                        level: targetLevel, 
+                        x: x.toString(), 
+                        y: y.toString(),
+                        // New Contract: Pre-calculated relative position
+                        // relX = Tile Left Edge - Camera Position
+                        relX: dx - offsetX,
+                        relY: dy - offsetY
+                    });
                 }
             }
         }
         
         return {
-            minX: startX_bi.toString(), maxX: endX_bi.toString(),
-            minY: startY_bi.toString(), maxY: endY_bi.toString(),
+            minX: minX_bi !== null ? minX_bi.toString() : centerTx_bi.toString(),
+            maxX: maxX_bi !== null ? maxX_bi.toString() : centerTx_bi.toString(),
+            minY: minY_bi !== null ? minY_bi.toString() : centerTy_bi.toString(),
+            maxY: maxY_bi !== null ? maxY_bi.toString() : centerTy_bi.toString(),
             tiles
         };
     }
