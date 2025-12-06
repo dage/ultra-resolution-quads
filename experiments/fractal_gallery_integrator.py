@@ -42,6 +42,16 @@ def ensure_dirs() -> None:
         os.makedirs(d, exist_ok=True)
 
 
+def apply_speed_overrides(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Dial down expensive fractals (e.g., power_tower) for quicker tests."""
+    if params.get("fractal_type") == "power_tower":
+        tuned = params.copy()
+        tuned["nx"] = min(params.get("nx", 800), 400)
+        tuned["max_iter"] = min(params.get("max_iter", 200), 120)
+        return tuned
+    return params
+
+
 def get_quadrant_params(item_params: Dict[str, Any], quad_key: str) -> Dict[str, Any]:
     """
     Calculates the parameters (x, y, dx, nx) for a specific quadrant.
@@ -90,6 +100,17 @@ def get_quadrant_params(item_params: Dict[str, Any], quad_key: str) -> Dict[str,
     v = Decimal(v_scale)
     
     if skew:
+        # Fix: If rotation is also present (theta != 0), FractalShades applies rotation 
+        # to the coordinates BEFORE skew. We must replicate this.
+        if theta_deg != 0.0:
+            theta_rad = Decimal(math.radians(theta_deg))
+            cos_t = Decimal(math.cos(theta_rad))
+            sin_t = Decimal(math.sin(theta_rad))
+            
+            u_rot = u * cos_t - v * sin_t
+            v_rot = u * sin_t + v * cos_t
+            u, v = u_rot, v_rot
+
         s00 = Decimal(str(skew.get("skew_00", 1.0)))
         s01 = Decimal(str(skew.get("skew_01", 0.0)))
         s10 = Decimal(str(skew.get("skew_10", 0.0)))
@@ -319,11 +340,12 @@ def main() -> None:
         processed += 1
 
         title = item["title"]
+        item_params = apply_speed_overrides(item["params"])
         print(f"\n[{idx + 1}/{len(GALLERY_ITEMS)}] Processing {title}...")
         
         # 1. Render Reference (Full)
         t0 = time.perf_counter()
-        ref_path = renderer.render(filename=item["filename"], supersampling=args.supersampling, **item["params"])
+        ref_path = renderer.render(filename=item["filename"], supersampling=args.supersampling, **item_params)
         t_ref = time.perf_counter() - t0
         print(f"  Reference rendered in {t_ref:.2f}s")
         
@@ -337,7 +359,7 @@ def main() -> None:
         print("  Rendering tiles:", end=" ", flush=True)
         for q in TILE_ORDER:
             print(q, end=".. ", flush=True)
-            q_params = get_quadrant_params(item["params"], q)
+            q_params = get_quadrant_params(item_params, q)
             q_filename = f"{stem}_{q}.png"
             
             # Use TILE_DIR
@@ -364,8 +386,8 @@ def main() -> None:
         # 3. Composite
         with Image.open(ref_path) as ref_img:
             ref_rgb = ref_img.convert("RGB")
-            ratio = float(item["params"].get("xy_ratio", 1.0))
-            nx = item["params"].get("nx", 800)
+            ratio = float(item_params.get("xy_ratio", 1.0))
+            nx = item_params.get("nx", 800)
             
             composite = composite_from_tiles(tiles_obj, nx, ratio)
             composite_path = os.path.join(COMPOSITE_DIR, f"{stem}_composite.png")

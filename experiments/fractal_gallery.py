@@ -174,7 +174,8 @@ GALLERY_ITEMS = [
         "params": {
             "fractal_type": "power_tower",
             "x": 1.40735, "y": -3.36277, "dx": 0.0005,
-            "nx": 800, "max_iter": 200,
+            # Lighter settings: smaller tile + fewer iterations for speed
+            "nx": 400, "max_iter": 120,
             "colormap": "flower"
         }
     },
@@ -202,7 +203,7 @@ def create_composite_gallery(items, output_path):
     # Config
     tile_w, tile_h = 400, 300 # Resize for grid
     padding = 20
-    text_h = 60
+    text_h = 80
     
     full_w = cols * tile_w + (cols + 1) * padding
     full_h = rows * (tile_h + text_h) + (rows + 1) * padding
@@ -253,6 +254,9 @@ def create_composite_gallery(items, output_path):
                 text_y = y_off + tile_h + 5
                 draw.text((x_off, text_y), item["title"], font=font, fill=text_color)
                 draw.text((x_off, text_y + 20), item["desc"], font=font_small, fill=(150, 150, 150))
+                duration = item.get("duration_s")
+                if duration is not None:
+                    draw.text((x_off, text_y + 40), f"Time: {duration:.2f}s", font=font_small, fill=(120, 200, 120))
                 
         except Exception as e:
             print(f"Failed to process image {item['filename']}: {e}")
@@ -273,8 +277,12 @@ def run_gallery():
     for item in GALLERY_ITEMS:
         print(f"\nRendering {item['title']}...")
         try:
+            t0 = time.time()
             renderer.render(filename=item["filename"], **item["params"])
-            successful_items.append(item)
+            duration = time.time() - t0
+            item_with_duration = dict(item)
+            item_with_duration["duration_s"] = duration
+            successful_items.append(item_with_duration)
         except Exception as e:
             print(f"❌ Error rendering {item['title']}: {e}")
             traceback.print_exc()
