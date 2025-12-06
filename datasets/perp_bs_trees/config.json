@@ -1,0 +1,49 @@
+{
+  "id": "perp_bs_trees",
+  "name": "Perp. BS Trees",
+  "description": "Perpendicular Burning Ship Trees (Fractal Gallery #7).",
+  "tile_size": 1024,
+  "renderer": "datasets.perp_bs_trees.render:PerpBSTreesRenderer",
+  "renderer_args": {
+    "fractal_type": "perpendicular_burning_ship",
+    "flavor": "Perpendicular burning ship",
+    "x": "-1.60075649116104853234447567671822519294",
+    "y": "-0.00000585584069328913182973043272000146363667",
+    "dx": "1.345424030679299e-29",
+    "max_iter": 6000,
+    "precision": 64,
+    "xy_ratio": 1.0,
+    "theta_deg": 120.0,
+    "skew_params": {
+      "skew_00": -0.985244568474214,
+      "skew_01": 0.6137988525,
+      "skew_10": 0.8089497623371,
+      "skew_11": -1.518945126681
+    },
+    "shade_kind": "glossy",
+    "colormap": "spring",
+    "zmin": 7.51,
+    "zmax": 8.06
+  },
+  "supports_multithreading": true,
+  "render_config": {
+    "mode": "path",
+    "path": {
+      "keyframes": [
+        {
+          "level": 1,
+          "x": 0,
+          "y": 0,
+          "duration": 20.0,
+          "easing": "linear"
+        },
+        {
+          "level": 50,
+          "x": 0,
+          "y": 0,
+          "duration": 0.0
+        }
+      ]
+    }
+  }
+}

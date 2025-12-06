@@ -24,6 +24,11 @@
       "id": "deep_embedded_julia",
       "name": "Deep Embedded Julia",
       "description": ""
+    },
+    {
+      "id": "perp_bs_trees",
+      "name": "Perp. BS Trees",
+      "description": "Perpendicular Burning Ship Trees (Fractal Gallery #7)."
     }
   ]
 }

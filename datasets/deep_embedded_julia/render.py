@@ -35,6 +35,9 @@ class JuliaDeepRenderer:
         self.theta_deg = Decimal(str(self.renderer_kwargs.get("theta_deg", "0.0")))
 
     def render(self, level, tile_x, tile_y):
+        # Ensure precision in worker process
+        getcontext().prec = self.precision + 20
+        
         current_dx = self.root_dx / (Decimal(2) ** level)
         
         # Calculate Screen Offset (u, v) from Center
