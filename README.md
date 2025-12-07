@@ -105,6 +105,23 @@ We provide a generic Python runner to automate experiments using these hooks.
 3.  The runner will launch the browser, inject your hook, autoplay the dataset's path, and save the collected `window.telemetryData` to the JSON output file.
 4.  If your hook needs to flush a final summary after playback, expose an optional `window.emitTextContentTelemetryNow()` (or similar) and the runner will call it before reading `telemetryData`.
 
+## 🔍 Quick Perplexity Search (CLI)
+
+Use Perplexity Sonar (cheap tier) via OpenRouter to fetch fresh web context for agents—no UI required.
+
+1.  Ensure `OPENROUTER_API_KEY` is available (the script auto-loads the repo `.env`; existing env vars override file values).
+2.  Run a search with a prompt (multiline via standard shell quoting/heredoc):
+    ```bash
+    python scripts/perplexity_search.py "latest research on ultra-high-res tile streaming"
+    # or
+    python scripts/perplexity_search.py "$(cat <<'EOF'
+    Summarize camera interpolation methods for quadtree renderers.
+    Focus on papers newer than 2022.
+    EOF
+    )"
+    ```
+The script hardcodes `perplexity/sonar` with medium context and prints the answer plus citations to stdout.
+
 ## 📖 Documentation
 
 -   **Fractal Generation:** See [docs/FRACTALSHADES_GUIDE.md](docs/FRACTALSHADES_GUIDE.md).
