@@ -30,18 +30,23 @@
     "mode": "path",
     "path": {
       "keyframes": [
-        {
-          "level": 1,
-          "x": 0,
-          "y": 0,
-          "duration": 20.0,
-          "easing": "linear"
+        { 
+          "camera": { 
+            "globalLevel": 1, 
+            "globalX": 0.5, 
+            "globalY": 0.5, 
+            "rotation": 0, 
+            "note": "Start: Root View" 
+          } 
         },
-        {
-          "level": 50,
-          "x": 0,
-          "y": 0,
-          "duration": 0.0
+        { 
+          "camera": { 
+            "globalLevel": 50, 
+            "globalX": 0.54548701773            , 
+            "globalY": 0.49376656260, 
+            "rotation": 10,
+            "note": "End: Zoom Target" 
+          } 
         }
       ]
     }
