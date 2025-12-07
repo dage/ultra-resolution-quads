@@ -86,10 +86,21 @@
     // Approximates the flow of pixels on screen.
     const visualDist = (p1, p2) => {
         const l_ref = Math.min(p1.globalLevel, p2.globalLevel);
-        const scale = Decimal.pow(2, l_ref);
         
-        const dx = p1.x.minus(p2.x).times(scale).toNumber();
-        const dy = p1.y.minus(p2.y).times(scale).toNumber();
+        let dx, dy;
+
+        // Optimization: Use native Math.pow for levels < 1000
+        // Fallback to Decimal.pow for >= 1000 to support extreme zoom levels
+        if (Math.abs(l_ref) < 1000) {
+            const scale = Math.pow(2, l_ref);
+            dx = p1.x.minus(p2.x).times(scale).toNumber();
+            dy = p1.y.minus(p2.y).times(scale).toNumber();
+        } else {
+            const scale = Decimal.pow(2, l_ref);
+            dx = p1.x.minus(p2.x).times(scale).toNumber();
+            dy = p1.y.minus(p2.y).times(scale).toNumber();
+        }
+        
         const dl = (p1.globalLevel - p2.globalLevel);
         const dr = (p1.rotation - p2.rotation);
         
