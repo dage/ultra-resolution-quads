@@ -1,292 +1,394 @@
-// Shared camera path sampler (frontend + backend via Node).
-// Simplified to straight linear interpolation between keyframes.
+/**
+ * Shared Camera Path Sampler (Frontend + Backend)
+ * 
+ * Strategy: "Filleted Linear Path with Width-Interpolation & Arc-Length Parameterization"
+ * 
+ * 1. GEOMETRY: The path is defined by Linear Segments connected by Quadratic Bezier corners.
+ *    - This ensures robust behavior (no overshoot) in Deep Zooms.
+ *    - "Deep Zoom" segments use a special "Swoop" interpolation (linear in Width, not Level)
+ *      to prevent astronomical visual path lengths.
+ *    - Corners are "Filleted" (cut) to provide C1 smoothness without stopping.
+ * 
+ * 2. TIMING: The path is re-parameterized by "Visual Distance" (Arc-Length).
+ *    - We sample the geometry into a high-resolution Lookup Table (LUT).
+ *    - Playback uses the LUT to ensure constant visual velocity relative to the viewport.
+ */
 
 (function(root, factory) {
     if (typeof module === 'object' && module.exports) {
-        // Node.js: Require vendored file relative to this file
+        // Node.js
         const Decimal = require('./libs/decimal.min.js');
         module.exports = factory(Decimal);
     } else {
-        // Browser: Expect global dependency
+        // Browser
         root.CameraPath = factory(root.Decimal);
     }
 }(typeof self !== 'undefined' ? self : this, function(Decimal) {
 
-  // Set default precision.
-  // 50 is sufficient for Level 100+ (10^-30). 
-  // For Deep Zooms (> Level 100), applications should increase this via Decimal.set().
-  Decimal.set({ precision: 50 });
-
-  const clamp01 = (v) => {
-      if (v.lessThan(0)) return new Decimal(0);
-      if (v.greaterThan(1)) return new Decimal(1);
-      return v;
-  };
-
-  /**
-   * Centralizes all coordinate conversion logic.
-   * Input: Object with various possible coordinate properties.
-   * Output: Canonical { x, y, globalLevel, rotation } where x,y are Decimals.
-   */
-  const normalizeCamera = (cam) => {
-    if (!cam || typeof cam !== 'object') return cam;
-
-    // 1. Calculate Global Level
-    // Priority: globalLevel > (level + zoomOffset) > level > 0
-    let globalLevel = 0;
-    if (typeof cam.globalLevel === 'number') {
-      globalLevel = cam.globalLevel;
-    } else {
-      const lvl = typeof cam.level === 'number' ? cam.level : 0;
-      const off = typeof cam.zoomOffset === 'number' ? cam.zoomOffset : 0;
-      globalLevel = lvl + off;
-    }
-
-    // 2. Calculate X / Y
-    // Strict mode: only accepts canonical 'x' and 'y' or their macros.
-    // We assume macros have been resolved before calling this if mixed.
-    // But here we convert valid inputs to Decimal.
+    // --- Configuration ---
     
-    let x, y;
-    
-    // Helper to ensure Decimal
-    const toDec = (val, def) => {
-        if (val instanceof Decimal) return val;
-        if (typeof val === 'number' || typeof val === 'string') return new Decimal(val);
-        return new Decimal(def);
-    };
-
-    x = toDec(cam.x, 0.5);
-    y = toDec(cam.y, 0.5);
-
-    return {
-      globalLevel: globalLevel,
-      x: clamp01(x),
-      y: clamp01(y),
-      rotation: typeof cam.rotation === 'number' ? cam.rotation : 0
-    };
-  };
-
-  // --- Path Macros ---
-  const MANDELBROT_BOUNDS = {
-    centerRe: new Decimal("-0.75"),
-    centerIm: new Decimal("0.0"),
-    width: new Decimal("3.0"),
-    height: new Decimal("3.0")
-  };
-
-  const resolveGlobalMacro = (cam) => {
-    // Check for existence to be safe.
-    if (cam.globalX === undefined || cam.globalY === undefined) return null;
-    
-    // Explicitly map global coordinates to x/y to ensure they take precedence
-    return normalizeCamera({
-      ...cam,
-      x: cam.globalX,
-      y: cam.globalY
-    });
-  };
-
-  const resolveMandelbrotMacro = (cam) => {
-    if (cam.re === undefined || cam.im === undefined) return null;
-    
-    const re = new Decimal(cam.re);
-    const im = new Decimal(cam.im);
-    
-    const { centerRe, centerIm, width, height } = MANDELBROT_BOUNDS;
-    const minRe = centerRe.minus(width.div(2));
-    const maxIm = centerIm.plus(height.div(2));
-    
-    // Calculate normalized coordinates
-    // gx = (re - minRe) / width
-    const gx = re.minus(minRe).div(width);
-    // gy = (maxIm - im) / height (invert because tileY grows downward)
-    const gy = maxIm.minus(im).div(height);
-
-    // Construct a temporary object to feed into normalizeCamera
-    return normalizeCamera({
-      ...cam,
-      x: gx,
-      y: gy
-    });
-  };
-
-  const resolveCameraMacros = (cam) => {
-    if (!cam || typeof cam !== 'object') return cam;
-    const macro = cam.macro;
-    
-    if (macro === 'mandelbrot' || macro === 'mandelbrot_point' || macro === 'mb') {
-      const res = resolveMandelbrotMacro(cam);
-      if (res) return res;
-    }
-    
-    // Explicit global macro or implied by globalX/Y
-    if (macro === 'global' || (cam.globalX !== undefined && cam.globalY !== undefined)) {
-      const res = resolveGlobalMacro(cam);
-      if (res) return res;
-    }
-    
-    return normalizeCamera(cam);
-  };
-
-  const visualDist = (p1, p2) => {
-    // Use the minimum level for scale to approximate the visual distance 
-    // of the pan, assuming an optimal "Zoom then Pan" or "Pan then Zoom" 
-    // trajectory (hyperbolic) which performs lateral movement at the coarsest level.
-    // Using average level (linear midpoint) overestimates distance wildly for deep zooms.
-    const l_ref = Math.min(p1.globalLevel, p2.globalLevel);
-    // Scale = 2^l_ref
-    const scale = Decimal.pow(2, l_ref);
-    
-    // dx = (p1.x - p2.x) * scale
-    const dx = p1.x.minus(p2.x).times(scale);
-    const dy = p1.y.minus(p2.y).times(scale);
-    
-    // Convert to number for distance calculation (we don't need 1000 digits for distance metric)
-    const dx_n = dx.toNumber();
-    const dy_n = dy.toNumber();
-    const dl = (p1.globalLevel - p2.globalLevel);
-    const dr = (p1.rotation - p2.rotation);
-
-    return Math.sqrt(dx_n * dx_n + dy_n * dy_n + dl * dl + dr * dr);
-  };
-
-  function buildSampler(path) {
-    const keyframes = path && Array.isArray(path.keyframes) ? path.keyframes : [];
-    const cams = keyframes.map(k => resolveCameraMacros(k.camera || k));
-
-    if (cams.length === 0) {
-      return { cameraAtProgress: () => null, pointAtProgress: () => null };
-    }
-    if (cams.length === 1) {
-      const c = cams[0];
-      return { cameraAtProgress: () => ({ ...c }), pointAtProgress: () => ({ ...c }) };
-    }
-
-    const cumulative = [0];
-    const segments = [];
-    let total = 0;
-    
-    for (let i = 1; i < cams.length; i++) {
-      const c1 = cams[i - 1];
-      const c2 = cams[i];
-      const d = visualDist(c1, c2);
-      total += d;
-      cumulative.push(total);
-
-      // Pre-calculate segment data for optimization
-      segments.push({
-          startCam: c1,
-          endCam: c2,
-          deltaX: c2.x.minus(c1.x),
-          deltaY: c2.y.minus(c1.y),
-          deltaLevel: c2.globalLevel - c1.globalLevel,
-          deltaRot: c2.rotation - c1.rotation,
-          length: d
-      });
-    }
-
-    // Optimized interpolate using pre-calculated segment
-    const interpolate = (segment, t) => {
-      // 1. Linear Level Interpolation
-      const currentLevel = segment.startCam.globalLevel + segment.deltaLevel * t;
-
-      // 2. Calculate u (The Curve Factor)
-      // We use a Hybrid approach to allow using standard Math.pow (fast) 
-      // while maintaining Decimal precision for the final coordinate.
-      let u, v;
-      const useEndAnchor = Math.abs(segment.deltaLevel) > 1e-6 && (segment.startCam.globalLevel - currentLevel) < -1;
-
-      if (Math.abs(segment.deltaLevel) < 1e-6) {
-        // Pure Pan
-        u = t;
-        v = 1 - t;
-      } else {
-        const diffCurrent = segment.startCam.globalLevel - currentLevel;
-        const diffEnd = -segment.deltaLevel;
-        const powCurrent = Math.pow(2, diffCurrent);
-        const powEnd = Math.pow(2, diffEnd);
+    const CONFIG = {
+        // Precision sufficient for ~Level 100+
+        DECIMAL_PRECISION: 50,
         
-        // Denominator is common
-        const denom = 1 - powEnd;
+        // Corner Logic
+        CORNER_RATIO: 0.5,        // 0.5 = Max curvature (starts halfway through segment)
+        MAX_CORNER_RADIUS: 4.0,   // Cap turn radius to ~4 screen widths to prevent "Orbiting" behavior at deep levels
+        
+        // Sampling
+        SAMPLES_PER_PRIM: 2000,   // High LUT resolution to prevent velocity quantization noise
+        
+        // Deep Zoom Thresholds
+        DEEP_ZOOM_RATIO: 100,     // Visual/Euclidean ratio to trigger Deep Zoom logic
+        MICRO_PAN_LIMIT: 1e-4     // Max Euclidean distance to still consider "Microscopic" (Linear/Swoop only)
+    };
 
-        if (!useEndAnchor) {
-             // Early Zoom (first 1 level): u is small/moderate.
-             // u = (1 - 2^diffCurrent) / (1 - 2^diffEnd)
-             u = (1 - powCurrent) / denom;
+    Decimal.set({ precision: CONFIG.DECIMAL_PRECISION });
+
+    // --- Helpers ---
+
+    const clamp01 = (v) => {
+        if (v.lessThan(0)) return new Decimal(0);
+        if (v.greaterThan(1)) return new Decimal(1);
+        return v;
+    };
+
+    // Converts generic camera object to canonical Decimal format
+    const normalizeCamera = (cam) => {
+        if (!cam || typeof cam !== 'object') return cam;
+        
+        let globalLevel = 0;
+        if (typeof cam.globalLevel === 'number') {
+            globalLevel = cam.globalLevel;
         } else {
-             // Deep Zoom: u is close to 1. v is small.
-             // v = 1 - u = (2^diffCurrent - 2^diffEnd) / (1 - 2^diffEnd)
-             v = (powCurrent - powEnd) / denom;
+            const lvl = typeof cam.level === 'number' ? cam.level : 0;
+            const off = typeof cam.zoomOffset === 'number' ? cam.zoomOffset : 0;
+            globalLevel = lvl + off;
         }
-      }
 
-      // 3. Calculate Position
-      let x, y;
-      if (!useEndAnchor && Math.abs(segment.deltaLevel) > 1e-6) {
-           // Anchor: Start
-           // x = start + delta * u
-           x = segment.startCam.x.plus(segment.deltaX.times(u));
-           y = segment.startCam.y.plus(segment.deltaY.times(u));
-      } else if (useEndAnchor) {
-           // Anchor: End
-           // x = end - delta * v
-           x = segment.endCam.x.minus(segment.deltaX.times(v));
-           y = segment.endCam.y.minus(segment.deltaY.times(v));
-      } else {
-           // Pan (Linear) - use start
-           x = segment.startCam.x.plus(segment.deltaX.times(u));
-           y = segment.startCam.y.plus(segment.deltaY.times(u));
-      }
-      const rot = segment.startCam.rotation + segment.deltaRot * t;
+        const toDec = (val) => {
+            if (val instanceof Decimal) return val;
+            if (typeof val === 'number' || typeof val === 'string') return new Decimal(val);
+            return new Decimal(0.5);
+        };
 
-      return {
-        globalLevel: currentLevel,
-        x: clamp01(x),
-        y: clamp01(y),
-        rotation: rot
-      };
+        return {
+            globalLevel: globalLevel,
+            x: clamp01(toDec(cam.x)),
+            y: clamp01(toDec(cam.y)),
+            rotation: typeof cam.rotation === 'number' ? cam.rotation : 0
+        };
     };
 
-    const cameraAtProgress = (p) => {
-      if (total === 0) return { ...cams[0] };
-      
-      let p_clamped = Math.min(1, Math.max(0, p));
-      const target = p_clamped * total;
+    // --- Metrics ---
 
-      // Binary search could be faster for huge paths, but linear scan is fine for <100 keyframes
-      let idx = cumulative.findIndex(c => c >= target);
-      if (idx === -1) idx = cumulative.length - 1;
-      if (idx === 0) idx = 1;
-
-      const prevDist = cumulative[idx - 1];
-      const segDist = cumulative[idx] - prevDist;
-      const t = segDist === 0 ? 0 : (target - prevDist) / segDist;
-
-      // Segments array is 0-indexed (segment 0 is between cams 0 and 1)
-      // So segment index is idx - 1
-      return interpolate(segments[idx - 1], t);
+    // Visual Distance: The "Perceptual" distance metric used for constant-speed timing.
+    // Approximates the flow of pixels on screen.
+    const visualDist = (p1, p2) => {
+        const l_ref = Math.min(p1.globalLevel, p2.globalLevel);
+        const scale = Decimal.pow(2, l_ref);
+        
+        const dx = p1.x.minus(p2.x).times(scale).toNumber();
+        const dy = p1.y.minus(p2.y).times(scale).toNumber();
+        const dl = (p1.globalLevel - p2.globalLevel);
+        const dr = (p1.rotation - p2.rotation);
+        
+        return Math.sqrt(dx*dx + dy*dy + dl*dl + dr*dr);
     };
 
-    return {
-      cameraAtProgress,
-      pointAtProgress: cameraAtProgress,
-      totalLength: total,
-      stops: cumulative,
-      // Expose segments for debugging if needed
-      _segments: segments
+    const euclideanDist = (p1, p2) => {
+        const dx = p1.x.minus(p2.x).toNumber();
+        const dy = p1.y.minus(p2.y).toNumber();
+        return Math.sqrt(dx*dx + dy*dy);
     };
-  }
 
-  function resolvePathMacros(path) {
-    if (!path || !Array.isArray(path.keyframes)) return path;
-    const keyframes = path.keyframes.map(kf => {
-      const cam = kf.camera || kf;
-      const resolved = resolveCameraMacros(cam);
-      return { ...kf, camera: resolved };
-    });
-    return { ...path, keyframes };
-  }
+    // --- Primitives ---
 
-  return { buildSampler, resolvePathMacros };
+    /**
+     * Creates a Linear Segment (P1 -> P2).
+     * Supports "Swoop" interpolation for Deep Zooms to minimize visual path length.
+     */
+    const createLine = (p1, p2, isDeepZoom) => {
+        // Pre-calculate widths for "Swoop" interpolation
+        const w1 = Math.pow(2, -p1.globalLevel);
+        const w2 = Math.pow(2, -p2.globalLevel);
+        const wDelta = w2 - w1;
+
+        return {
+            type: 'line',
+            p1, p2,
+            eval: (t) => { // t in [0, 1]
+                // Linearly interpolate non-spatial properties
+                const lvl = p1.globalLevel + (p2.globalLevel - p1.globalLevel) * t;
+                const rot = p1.rotation + (p2.rotation - p1.rotation) * t;
+                
+                // Spatial Interpolation
+                let s = t; 
+                if (isDeepZoom && Math.abs(wDelta) > 1e-15) {
+                    // "Swoop": Interpolate X/Y linearly with Width (Scale) instead of Level/Time.
+                    // This moves the camera primarily when Width is large (Zoomed Out), 
+                    // avoiding the "diagonal drift" at deep levels that creates massive visual distance.
+                    const wCurr = Math.pow(2, -lvl);
+                    s = (wCurr - w1) / wDelta;
+                }
+                
+                const x = p1.x.plus(p2.x.minus(p1.x).times(s));
+                const y = p1.y.plus(p2.y.minus(p1.y).times(s));
+                
+                return { x, y, globalLevel: lvl, rotation: rot };
+            }
+        };
+    };
+
+    /**
+     * Creates a Quadratic Bezier Corner (P0 -> P1 -> P2).
+     * P1 is the control point (the original sharp corner).
+     * P0 and P2 are the start/end points on the filleted segments.
+     */
+    const createCorner = (p0, p1, p2) => {
+        return {
+            type: 'corner',
+            p0, p1, p2,
+            eval: (t) => { // t in [0, 1]
+                const inv = 1 - t;
+                const b0 = inv * inv;
+                const b1 = 2 * inv * t;
+                const b2 = t * t;
+                
+                // Bezier Blend
+                const x = p0.x.times(b0).plus(p1.x.times(b1)).plus(p2.x.times(b2));
+                const y = p0.y.times(b0).plus(p1.y.times(b1)).plus(p2.y.times(b2));
+                const lvl = p0.globalLevel * b0 + p1.globalLevel * b1 + p2.globalLevel * b2;
+                const rot = p0.rotation * b0 + p1.rotation * b1 + p2.rotation * b2;
+                
+                return { x, y, globalLevel: lvl, rotation: rot };
+            }
+        };
+    };
+
+    // --- Main Sampler Factory ---
+
+    function buildSampler(path) {
+        const keyframes = path && Array.isArray(path.keyframes) ? path.keyframes : [];
+        const cams = keyframes.map(k => resolveCameraMacros(k.camera || k));
+
+        if (cams.length === 0) return { cameraAtProgress: () => null, pointAtProgress: () => null };
+        if (cams.length === 1) {
+            const c = cams[0];
+            return { cameraAtProgress: () => ({ ...c }), pointAtProgress: () => ({ ...c }), totalLength: 0, stops: [0] };
+        }
+
+        // Phase 1: Geometry Generation (Primitives)
+        // Convert the list of keyframes into a sequence of Lines and Corners.
+        const primitives = [];
+        const rawLengths = [];
+        const deepZoomFlags = [];
+
+        // Pre-pass: Analyze segments
+        for (let i = 0; i < cams.length - 1; i++) {
+            let d = visualDist(cams[i], cams[i+1]);
+            if (d < 1e-9) d = 1e-9;
+            rawLengths.push(d);
+
+            // Detect Deep Zoom conditions
+            const eDist = euclideanDist(cams[i], cams[i+1]);
+            
+            // Use MAX level to detect if we are touching deep levels (Zoom Out support).
+            // If we used visualDist (min level), L10->L0 would look like a "shallow" move (Ratio ~20)
+            // and fail to trigger Swoop. With Max Level, Ratio is ~20,000.
+            const maxLevel = Math.max(cams[i].globalLevel, cams[i+1].globalLevel);
+            const maxScale = Decimal.pow(2, maxLevel).toNumber();
+            
+            // Ratio of "Worst Case Visual Distance" to Euclidean Distance
+            // If eDist is tiny, ratio is huge.
+            const ratio = (eDist < 1e-9) ? 1e9 : (eDist * maxScale) / eDist; // effectively just maxScale
+            
+            // Use Swoop logic if the ratio of Visual/Euclidean distance is huge (Deep Zoom).
+            // We removed the MICRO_PAN_LIMIT check because even "large" euclidean moves (e.g. 0.05)
+            // should use Swoop if the Visual distance is massive (Diagonal Deep Zoom), 
+            // otherwise we get astronomical path lengths ($10^13$) and tile explosions.
+            const isDeep = (ratio > CONFIG.DEEP_ZOOM_RATIO);
+            deepZoomFlags.push(isDeep);
+        }
+
+        let currentP = cams[0]; // Start point of next primitive
+
+        for (let i = 0; i < cams.length - 1; i++) {
+            const pStart = cams[i];
+            const pCorner = cams[i+1];
+            const len = rawLengths[i];
+            const isDeep = deepZoomFlags[i];
+            
+            // Final Segment
+            if (i === cams.length - 2) {
+                primitives.push(createLine(currentP, cams[i+1], isDeep));
+                break;
+            }
+            
+            // Corner Generation
+            const nextLen = rawLengths[i+1];
+            
+            // Calculate Radius: Percentage of length, but capped for Deep Pan safety
+            let radius = Math.min(len, nextLen) * CONFIG.CORNER_RATIO;
+            if (radius > CONFIG.MAX_CORNER_RADIUS) radius = CONFIG.MAX_CORNER_RADIUS;
+            
+            // Calculate In/Out points on the segments
+            const t_in = 1.0 - (radius / len);
+            // Note: We use the "Swoop" logic (if applicable) to find the point on the line
+            const qIn = createLine(pStart, pCorner, isDeep).eval(t_in);
+            
+            // Add the incoming Line (Start -> qIn)
+            primitives.push(createLine(currentP, qIn, isDeep));
+            
+            // Calculate Out point on next segment
+            const t_out = radius / nextLen;
+            const pNext = cams[i+2];
+            const isNextDeep = deepZoomFlags[i+1];
+            const qOut = createLine(pCorner, pNext, isNextDeep).eval(t_out);
+            
+            // Add the Corner (qIn -> pCorner -> qOut)
+            primitives.push(createCorner(qIn, pCorner, qOut));
+            
+            // Advance
+            currentP = qOut;
+        }
+
+        // Phase 2: Arc-Length Parameterization (LUT)
+        // Sample the geometry to create a map of Time -> Distance
+        const lut = [];
+        let totalLength = 0;
+        const stops = [0]; 
+        
+        lut.push({ t: 0, dist: 0 });
+        
+        primitives.forEach((prim, pIdx) => {
+            let prevSample = prim.eval(0);
+            
+            for (let j = 1; j <= CONFIG.SAMPLES_PER_PRIM; j++) {
+                const t = j / CONFIG.SAMPLES_PER_PRIM;
+                const currSample = prim.eval(t);
+                const d = visualDist(prevSample, currSample);
+                totalLength += d;
+                
+                // Global T: Primitive Index + Local T
+                lut.push({ t: pIdx + t, dist: totalLength });
+                prevSample = currSample;
+            }
+
+            // Record stops for timeline UI (Approximation: End of Primitive)
+            // Keyframe i corresponds to the end of the turn at Corner i-1
+            if (prim.type === 'corner' || pIdx === primitives.length - 1) {
+                stops.push(totalLength);
+            }
+        });
+
+        // Phase 3: Runtime Evaluator
+        const cameraAtProgress = (p) => {
+            const p_clamped = Math.min(1, Math.max(0, p));
+            const targetDist = p_clamped * totalLength;
+            
+            // Binary Search LUT
+            let low = 0, high = lut.length - 1;
+            while (low < high) {
+                const mid = (low + high) >>> 1;
+                if (lut[mid].dist < targetDist) low = mid + 1;
+                else high = mid;
+            }
+            const idx = low;
+            
+            if (idx === 0) return primitives[0].eval(0);
+            
+            const p0 = lut[idx - 1];
+            const p1 = lut[idx];
+            
+            // Interpolate Global T
+            const ratio = (targetDist - p0.dist) / (p1.dist - p0.dist || 1e-9);
+            const globalT = p0.t + ratio * (p1.t - p0.t);
+            
+            // Resolve to Primitive + Local T
+            let primIdx = Math.floor(globalT);
+            let localT = globalT - primIdx;
+            
+            if (primIdx >= primitives.length) {
+                primIdx = primitives.length - 1;
+                localT = 1;
+            }
+            
+            const c = primitives[primIdx].eval(localT);
+            
+            return {
+                x: clamp01(c.x),
+                y: clamp01(c.y),
+                globalLevel: c.globalLevel,
+                rotation: c.rotation
+            };
+        };
+
+        return {
+            cameraAtProgress,
+            pointAtProgress: cameraAtProgress,
+            totalLength: totalLength,
+            stops: stops,
+            _segments: primitives // Exposed for debugging
+        };
+    }
+
+    // --- Macro Resolution ---
+
+    const MANDELBROT_BOUNDS = {
+        centerRe: new Decimal("-0.75"),
+        centerIm: new Decimal("0.0"),
+        width: new Decimal("3.0"),
+        height: new Decimal("3.0")
+    };
+
+    const resolveGlobalMacro = (cam) => {
+        if (cam.globalX === undefined || cam.globalY === undefined) return null;
+        return normalizeCamera({ ...cam, x: cam.globalX, y: cam.globalY });
+    };
+
+    const resolveMandelbrotMacro = (cam) => {
+        if (cam.re === undefined || cam.im === undefined) return null;
+        const re = new Decimal(cam.re);
+        const im = new Decimal(cam.im);
+        const { centerRe, centerIm, width, height } = MANDELBROT_BOUNDS;
+        const minRe = centerRe.minus(width.div(2));
+        const maxIm = centerIm.plus(height.div(2));
+        
+        // Normalized coordinates
+        const gx = re.minus(minRe).div(width);
+        const gy = maxIm.minus(im).div(height);
+        
+        return normalizeCamera({ ...cam, x: gx, y: gy });
+    };
+
+    const resolveCameraMacros = (cam) => {
+        if (!cam || typeof cam !== 'object') return cam;
+        const macro = cam.macro;
+        
+        if (macro === 'mandelbrot' || macro === 'mandelbrot_point' || macro === 'mb') {
+            const res = resolveMandelbrotMacro(cam);
+            if (res) return res;
+        }
+        
+        if (macro === 'global' || (cam.globalX !== undefined && cam.globalY !== undefined)) {
+            const res = resolveGlobalMacro(cam);
+            if (res) return res;
+        }
+        
+        return normalizeCamera(cam);
+    };
+
+    const resolvePathMacros = (path) => {
+        if (!path || !Array.isArray(path.keyframes)) return path;
+        const keyframes = path.keyframes.map(kf => {
+            const cam = kf.camera || kf;
+            const resolved = resolveCameraMacros(cam);
+            return { ...kf, camera: resolved };
+        });
+        return { ...path, keyframes };
+    };
+
+    // Export
+    return { buildSampler, resolvePathMacros };
 }));

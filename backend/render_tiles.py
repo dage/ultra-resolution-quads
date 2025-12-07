@@ -335,10 +335,10 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=None,
         try:
             info = camera_utils.get_path_info(path)
             length = info.get('totalLength', 0)
-            # Heuristic: 100 samples per visual unit ensures very dense coverage for smooth animations.
-            # Enforce a reasonable minimum (e.g. 200) to avoid undersampling short paths.
-            steps = int(max(200, length * 100))
-            print(f"Calculated path length: {length:.2f}. Using {steps} samples.")
+            # Heuristic: 100 samples per visual unit ensures dense coverage.
+            # Cap at 50,000 steps to prevent explosion on deep zoom paths where visual length is huge.
+            steps = int(max(200, min(50000, length * 100)))
+            print(f"Calculated path length: {length:.2f}. Using {steps} samples (capped).")
         except Exception as e:
             print(f"Warning: could not calculate dynamic path length ({e}). Falling back to 2000 steps.")
             steps = 2000

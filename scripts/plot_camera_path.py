@@ -46,9 +46,13 @@ def plot_dataset_path(config_file, dataset_id):
     pos_x, pos_y, pos_l = [], [], []
     
     # Sampling loop
-    for i in range(steps + 1):
-        t = i / steps
-        cam = camera_utils.camera_at_progress(t)
+    # Optimized: Batch sample
+    progress_values = [i / steps for i in range(steps + 1)]
+    print(f"Sampling {len(progress_values)} points...")
+    
+    cameras, _ = camera_utils.cameras_at_progresses(progress_values)
+    
+    for t, cam in zip(progress_values, cameras):
         if not cam: continue
         
         gx = cam['globalX']
@@ -133,8 +137,17 @@ def plot_dataset_path(config_file, dataset_id):
     plt.close(fig) # Close to free memory
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Plot camera path for datasets")
+    parser.add_argument("--dataset", help="Specific dataset ID to plot (optional)")
+    args = parser.parse_args()
+
     # Scan for config.json files
-    search_pattern = os.path.join(DATA_ROOT, '*', 'config.json')
+    if args.dataset:
+        search_pattern = os.path.join(DATA_ROOT, args.dataset, 'config.json')
+    else:
+        search_pattern = os.path.join(DATA_ROOT, '*', 'config.json')
+    
     config_files = glob.glob(search_pattern)
     
     if not config_files:
