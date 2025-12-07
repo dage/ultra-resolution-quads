@@ -18,6 +18,7 @@ const state = {
         y: new Decimal("0.5"),
         rotation: 0
     },
+    capturedKeyframes: [],
     isDragging: false,
     lastMouse: { x: 0, y: 0 },
     viewSize: { width: 0, height: 0 },
@@ -70,6 +71,9 @@ const els = {
     },
     btnFullscreen: document.getElementById('btn-fullscreen'),
     btnToggleUI: document.getElementById('btn-toggle-ui'),
+    btnAddKeyframe: document.getElementById('btn-add-keyframe'),
+    btnCopyKeyframes: document.getElementById('btn-copy-keyframes'),
+    valKeyframeCount: document.getElementById('val-keyframe-count'),
     app: document.getElementById('app')
 };
 
@@ -471,6 +475,45 @@ function setupEventListeners() {
 
     // Reset Button
     // els.btnReset.addEventListener('click', resetCamera);
+
+    // Add Keyframe
+    if (els.btnAddKeyframe) {
+        els.btnAddKeyframe.addEventListener('click', () => {
+            const kf = {
+                camera: {
+                    globalLevel: state.camera.globalLevel,
+                    globalX: state.camera.x.toString(), // Preserve Decimal precision as string
+                    globalY: state.camera.y.toString(),
+                    rotation: state.camera.rotation || 0,
+                    note: `Keyframe ${state.capturedKeyframes.length + 1}`
+                }
+            };
+            state.capturedKeyframes.push(kf);
+            if (els.valKeyframeCount) {
+                els.valKeyframeCount.textContent = `(${state.capturedKeyframes.length})`;
+            }
+            console.log("Keyframe added:", kf);
+        });
+    }
+
+    // Copy Keyframes
+    if (els.btnCopyKeyframes) {
+        els.btnCopyKeyframes.addEventListener('click', () => {
+            const json = JSON.stringify(state.capturedKeyframes, null, 2);
+            // Use Clipboard API if available, else log
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(json).then(() => {
+                    console.log("Keyframes copied to clipboard.");
+                    // Optional visual feedback
+                    const originalText = els.btnCopyKeyframes.textContent;
+                    els.btnCopyKeyframes.textContent = "✓";
+                    setTimeout(() => els.btnCopyKeyframes.textContent = originalText, 1000);
+                }).catch(err => console.error("Clipboard failed:", err));
+            } else {
+                console.log("Clipboard API unavailable. Keyframes:", json);
+            }
+        });
+    }
 
     // Initialize input state
     updateInputAvailability();
