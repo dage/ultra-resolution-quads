@@ -1,3 +1,8 @@
 Pillow
 moderngl
 numpy
+fastapi
+uvicorn
+python-multipart
+requests
+aiofiles

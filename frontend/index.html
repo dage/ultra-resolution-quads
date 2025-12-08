@@ -55,6 +55,16 @@
             </div>
 
             <div class="panel">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <input type="checkbox" id="chk-live-render"> Live Render
+                </label>
+                <div id="queue-status" class="hidden" style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                    <span class="status-dot" style="width: 8px; height: 8px; background: #666; border-radius: 50%; display: inline-block;"></span>
+                    <span id="queue-text" style="font-size: 0.9em; color: #aaa;">Idle</span>
+                </div>
+            </div>
+
+            <div class="panel">
                 <h2>Camera</h2>
                 <div class="control-group">
                     <label>Level: <span id="val-level">0</span></label>

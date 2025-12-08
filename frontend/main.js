@@ -904,11 +904,13 @@ function updateLayer(level, opacity, targetTiles) {
         const x = t.x; // String
         const y = t.y; // String
 
-        // Check manifest if available
-        if (state.availableTiles.size > 0) {
+        // Check manifest when not live rendering; in live mode we want to allow
+        // requests for tiles that aren't pre-generated so the backend can render
+        // them on demand.
+        if (!state.liveRender && state.availableTiles.size > 0) {
             const manifestKey = `${level}/${x}/${y}`;
             if (!state.availableTiles.has(manifestKey)) {
-                return; // Skip non-existent tile
+                return; // Skip non-existent tile when relying on static tiles
             }
         }
 

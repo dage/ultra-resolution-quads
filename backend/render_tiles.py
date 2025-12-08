@@ -11,14 +11,11 @@ from typing import Any, Dict
 
 from PIL import Image
 
-TILE_EXTENSION = ".webp"
-TILE_FORMAT = "WEBP"
-# Match the "medium" WebP settings used in experiments/compare_image_quality.py
-TILE_WEBP_PARAMS = {"quality": 85, "method": 6}
-
-# Add project root to path to find renderers
+# Add project root to path to find renderers and constants
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from backend.constants import TILE_EXTENSION, TILE_FORMAT, TILE_WEBP_PARAMS
+from backend.renderer_utils import load_renderer
 import camera_utils
 
 DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -244,36 +241,6 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
     
     print(f"Rendering complete. Generated {generated} tiles.")
     return generated
-
-def load_renderer(renderer_path: str, tile_size: int, renderer_kwargs: Dict[str, Any]):
-    """
-    Load and instantiate a renderer class given a module path string of the form
-    'module.submodule:ClassName' or 'module.submodule.ClassName'.
-    """
-    if ':' in renderer_path:
-        module_path, class_name = renderer_path.split(':', 1)
-    elif '.' in renderer_path:
-        module_path, class_name = renderer_path.rsplit('.', 1)
-    else:
-        raise ValueError("Renderer path must be in the form 'module:ClassName' or 'module.ClassName'.")
-
-    module = importlib.import_module(module_path)
-    renderer_cls = getattr(module, class_name)
-
-    kwargs = dict(renderer_kwargs or {})
-    try:
-        sig = inspect.signature(renderer_cls)
-        if 'tile_size' in sig.parameters and 'tile_size' not in kwargs:
-            kwargs['tile_size'] = tile_size
-    except (TypeError, ValueError):
-        # Builtins or C extensions may not support signature inspection
-        pass
-
-    try:
-        return renderer_cls(**kwargs)
-    except TypeError as exc:
-        raise TypeError(f"Failed to instantiate renderer '{renderer_path}' with args {kwargs}: {exc}") from exc
-
 
 
 def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=True, num_workers=8):

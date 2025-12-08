@@ -286,3 +286,29 @@ button:hover {
     border-left: none;
     overflow-y: hidden;
 }
+
+/* Live Render Styles */
+.live-tile {
+    opacity: 0.8; /* Slightly transparent to indicate it's special/streaming */
+    transition: opacity 0.5s;
+}
+
+.live-tile.loaded {
+    opacity: 1;
+}
+
+.status-dot.active {
+    background-color: #0f0 !important;
+    box-shadow: 0 0 5px #0f0;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+}
+
+.hidden {
+    display: none !important;
+}
