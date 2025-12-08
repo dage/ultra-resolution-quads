@@ -1,4 +1,5 @@
 const BASE_DATA_URI = '..';
+const LIVE_SERVER_URI = 'http://localhost:8000';
 // Logical tile size for layout; actual image resolution can differ.
 const LOGICAL_TILE_SIZE = 512;
 
@@ -12,8 +13,9 @@ const state = {
     // Telemetry Data
     telemetry: [],
     autoplayPending: false,
+    liveRender: false,
     camera: {
-        globalLevel: 0,
+        globalLevel: 1,
         x: new Decimal("0.5"),
         y: new Decimal("0.5"),
         rotation: 0
@@ -47,6 +49,10 @@ const els = {
     layers: document.getElementById('layers-container'),
     datasetSelect: document.getElementById('dataset-select'),
     chkDebug: document.getElementById('chk-debug'),
+    chkLiveRender: document.getElementById('chk-live-render'),
+    queueStatus: document.getElementById('queue-status'),
+    queueText: document.getElementById('queue-text'),
+    queueDot: document.querySelector('#queue-status .status-dot'),
     inputs: {
         level: document.getElementById('in-level'),
         x: document.getElementById('in-x'),
@@ -325,6 +331,19 @@ function setupEventListeners() {
         });
     }
     
+    // Live Render Toggle
+    if (els.chkLiveRender) {
+        els.chkLiveRender.addEventListener('change', (e) => {
+            state.liveRender = e.target.checked;
+            if (state.liveRender) {
+                if (els.queueStatus) els.queueStatus.classList.remove('hidden');
+                pollQueueStatus(); // Start immediately
+            } else {
+                if (els.queueStatus) els.queueStatus.classList.add('hidden');
+            }
+        });
+    }
+
     // Path Controls
     // els.pathSelect listener removed
     
@@ -517,6 +536,33 @@ function setupEventListeners() {
 
     // Initialize input state
     updateInputAvailability();
+    
+    // Start Queue Polling if enabled
+    setInterval(() => {
+        if (state.liveRender) pollQueueStatus();
+    }, 200);
+}
+
+async function pollQueueStatus() {
+    try {
+        const resp = await fetch(`${LIVE_SERVER_URI}/queue-status`);
+        if (resp.ok) {
+            const status = await resp.json();
+            // Update UI
+            if (els.queueText) {
+                els.queueText.textContent = `${status.pending} Pending | ${status.active ? 'Rendering' : 'Idle'}`;
+            }
+            if (els.queueDot) {
+                if (status.pending > 0 || status.active) {
+                    els.queueDot.classList.add('active');
+                } else {
+                    els.queueDot.classList.remove('active');
+                }
+            }
+        }
+    } catch (e) {
+        // console.warn("Queue polling failed", e);
+    }
 }
 
 function resetCamera() {
@@ -525,7 +571,7 @@ function resetCamera() {
         : null;
 
     const cam = firstKeyframeCam || {
-        globalLevel: 0,
+        globalLevel: 1,
         x: 0.5,
         y: 0.5,
         rotation: 0
@@ -765,6 +811,30 @@ imageLoader.onmessage = function(e) {
 };
 
 function getTileImage(datasetId, level, x, y) {
+    const manifestKey = `${level}/${x}/${y}`;
+    const exists = state.availableTiles.has(manifestKey);
+
+    if (!exists && state.liveRender) {
+        const img = document.createElement('img');
+        img.className = 'tile live-tile';
+        img.style.width = `${LOGICAL_TILE_SIZE}px`;
+        img.style.height = `${LOGICAL_TILE_SIZE}px`;
+        img.style.transformOrigin = 'top left';
+        img._tileCache = { transform: '', opacity: '', zIndex: '' };
+        img.isLoaded = false;
+        
+        img.onload = () => {
+            img.isLoaded = true;
+            img.classList.add('loaded');
+        };
+        img.onerror = () => {
+            img.isLoaded = true; 
+        };
+        
+        img.src = `${LIVE_SERVER_URI}/live/${datasetId}/${level}/${x}/${y}.webp`;
+        return img;
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = LOGICAL_TILE_SIZE;
     canvas.height = LOGICAL_TILE_SIZE;
