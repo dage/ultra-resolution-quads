@@ -59,6 +59,11 @@ body, html {
     box-sizing: border-box; /* Ensure border is included in width/height if we add one */
 }
 
+.tile.flash-loaded,
+.live-tile.flash-loaded {
+    animation: tile-fade-in 0.3s ease;
+}
+
 /* Debug Mode Styles */
 body.debug .tile {
     border: 1px dashed rgba(255, 0, 0, 0.5);
@@ -289,8 +294,28 @@ button:hover {
 
 /* Live Render Styles */
 .live-tile {
+    position: absolute; /* must remain absolute for correct placement */
+    overflow: hidden;   /* contain scan overlay */
     opacity: 0.8; /* Slightly transparent to indicate it's special/streaming */
     transition: opacity 0.5s;
+}
+
+.live-tile.rendering {
+    animation: scan-pulse 1.5s infinite ease-in-out;
+    border: 2px solid rgba(0, 255, 0, 0.3);
+    z-index: 10; /* Make the active tile stand out */
+}
+
+.live-tile.rendering::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 10%;
+    background: linear-gradient(to bottom, transparent, rgba(0, 255, 0, 0.4), transparent);
+    animation: scan-down 2s linear infinite;
+    pointer-events: none;
 }
 
 .live-tile.loaded {
@@ -338,6 +363,24 @@ button:hover {
     0% { opacity: 0.5; }
     50% { opacity: 1; }
     100% { opacity: 0.5; }
+}
+
+@keyframes tile-fade-in {
+    0% { filter: brightness(2); background-color: rgba(255, 255, 255, 0.9); }
+    100% { filter: brightness(1); background-color: transparent; }
+}
+
+@keyframes scan-pulse {
+    0% { box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.2); }
+    50% { box-shadow: inset 0 0 40px rgba(0, 255, 0, 0.6); border-color: rgba(0, 255, 0, 0.8); }
+    100% { box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.2); }
+}
+
+@keyframes scan-down {
+    0% { top: -10%; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
 }
 
 .hidden {

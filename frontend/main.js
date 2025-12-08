@@ -55,6 +55,9 @@ class RequestManager {
             }
             this.liveInFlight = req.id;
             this.clearQueueClass(imgEl);
+            if (opts.element) {
+                opts.element.classList.add('rendering');
+            }
 
             const retryDelay = opts.retryDelayMs ?? 200;
             const scheduleRetry = () => {
@@ -180,6 +183,7 @@ class RequestManager {
             }
             if (lane === 'live' && req.options && req.options.element) {
                 this.clearQueueClass(req.options.element);
+                req.options.element.classList.remove('rendering');
             }
         }
         updateQueueStatusUI(); // Immediate feedback after each tile
@@ -358,6 +362,12 @@ function toNumber(val) {
     if (typeof val === 'number') return val;
     if (val && typeof val.toNumber === 'function') return val.toNumber();
     return parseFloat(val || 0);
+}
+
+function flashTileLoaded(el) {
+    if (!el) return;
+    el.classList.add('flash-loaded');
+    setTimeout(() => el.classList.remove('flash-loaded'), 400);
 }
 
 // Application State
@@ -1190,16 +1200,17 @@ function replaceLiveTileWithCanvas(id, container, bitmap, imgEl) {
 
     const cache = container._tileCache || {};
     const ctx = canvas.getContext('2d');
-    if (bitmap) {
-        ctx.drawImage(bitmap, 0, 0, w, h);
-    } else if (imgEl && imgEl.complete) {
-        ctx.drawImage(imgEl, 0, 0, w, h);
-    } else {
+        if (bitmap) {
+            ctx.drawImage(bitmap, 0, 0, w, h);
+        } else if (imgEl && imgEl.complete) {
+            ctx.drawImage(imgEl, 0, 0, w, h);
+        } else {
         ctx.clearRect(0, 0, w, h);
     }
 
     canvas.isLoaded = true;
     canvas.classList.add('loaded');
+    flashTileLoaded(canvas);
     canvas._tileCache = { ...cache };
     if (cache.transform) canvas.style.transform = cache.transform;
     if (cache.opacity) canvas.style.opacity = cache.opacity;
