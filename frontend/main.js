@@ -10,13 +10,16 @@ class RequestManager {
         this.activeRequests = new Map();
         // Separate lanes for live (expensive) vs worker/static (cheap)
         this.limits = {
-            live: 2,
+            live: 1,
             worker: 6
         };
         this.activeCounts = {
             live: 0,
             worker: 0
         };
+        this.liveInFlight = null; // Enforce single live render at a time
+        this.liveQueuedClass = new WeakMap();
+        this.liveQueuedElements = new Set();
         this.latestCamera = null;
         this.latestView = null;
         this.workerIdToRequest = new Map();
@@ -44,10 +47,64 @@ class RequestManager {
     dispatch(req) {
         const opts = req.options || {};
         if (opts.type === 'live') {
-            // Start image download when slot is available
-            if (opts.element && opts.src) {
-                opts.element.src = opts.src;
+            const imgEl = opts.imgEl || opts.element;
+            const url = opts.src;
+            if (!imgEl || !url) {
+                this.complete(req.id, false);
+                return;
             }
+            this.liveInFlight = req.id;
+            this.clearQueueClass(imgEl);
+
+            const retryDelay = opts.retryDelayMs ?? 200;
+            const scheduleRetry = () => {
+                // Remove any existing queued copy before retrying to avoid duplicates
+                this.queue = this.queue.filter(r => r.id !== req.id);
+                const retryReq = { ...req, status: 'QUEUED' };
+                setTimeout(() => {
+                    this.queue.unshift(retryReq);
+                    this.process();
+                }, retryDelay);
+            };
+
+            const startFetch = async () => {
+                try {
+                    const resp = await fetch(url, { cache: 'no-store' });
+                    if (resp.status === 503) {
+                        this.complete(req.id, false);
+                        scheduleRetry();
+                        return;
+                    }
+                    if (!resp.ok) {
+                        this.complete(req.id, false);
+                        return;
+                    }
+
+                    const blob = await resp.blob();
+                    const objectUrl = URL.createObjectURL(blob);
+
+                    imgEl.onload = () => {
+                        imgEl.isLoaded = true;
+                        imgEl.classList.add('loaded');
+                        URL.revokeObjectURL(objectUrl);
+                        this.complete(req.id, true);
+                    };
+
+                    imgEl.onerror = () => {
+                        URL.revokeObjectURL(objectUrl);
+                        this.complete(req.id, false);
+                        scheduleRetry();
+                    };
+
+                    imgEl.src = objectUrl;
+                } catch (err) {
+                    console.warn('Live tile fetch error, retrying:', err);
+                    this.complete(req.id, false);
+                    scheduleRetry();
+                }
+            };
+
+            startFetch();
         } else {
             // Worker-based tile load
             const workerId = this.nextWorkerId++;
@@ -61,12 +118,21 @@ class RequestManager {
         if (this.latestCamera && this.latestView) {
             const cam = this.latestCamera;
             const view = this.latestView;
-            this.queue.sort((a, b) => this.getVisualDistance(a, cam, view) - this.getVisualDistance(b, cam, view));
+            this.queue.sort((a, b) => {
+                const pa = this.getVisualPriority(a, cam, view);
+                const pb = this.getVisualPriority(b, cam, view);
+                // Larger visible area first, then closer to center
+                if (pb.area !== pa.area) return pb.area - pa.area;
+                return pa.dist - pb.dist;
+            });
         }
 
         for (let i = 0; i < this.queue.length; i++) {
             const req = this.queue[i];
             const lane = req.type || 'worker';
+            if (lane === 'live' && this.liveInFlight && this.liveInFlight !== req.id) {
+                continue; // Single live guard
+            }
             if (this.activeCounts[lane] < (this.limits[lane] ?? 0)) {
                 this.queue.splice(i, 1);
                 i--;
@@ -76,6 +142,9 @@ class RequestManager {
                 this.dispatch(req);
             }
         }
+
+        // Update visual queue positions for remaining queued items
+        this.updateQueuePositions();
     }
 
     complete(id, success = true) {
@@ -92,8 +161,14 @@ class RequestManager {
             if (this.activeCounts[lane] > 0) {
                 this.activeCounts[lane]--;
             }
+            if (lane === 'live' && this.liveInFlight === id) {
+                this.liveInFlight = null;
+            }
+            if (lane === 'live' && req.options && req.options.element) {
+                this.clearQueueClass(req.options.element);
+            }
         }
-        pollQueueStatus(); // Immediate feedback after each tile
+        updateQueueStatusUI(); // Immediate feedback after each tile
         this.process();
     }
 
@@ -119,6 +194,10 @@ class RequestManager {
         for (const req of this.queue) {
             if (shouldKeep(req)) {
                 filtered.push(req);
+            } else {
+                if (req.type === 'live' && req.options && req.options.element) {
+                    this.clearQueueClass(req.options.element);
+                }
             }
         }
         this.queue = filtered;
@@ -133,6 +212,26 @@ class RequestManager {
         const dx = centerX - viewCenterX;
         const dy = centerY - viewCenterY;
         return dx * dx + dy * dy;
+    }
+
+    getVisualPriority(req, camera, viewSize) {
+        const bounds = this.getTileBounds(req, camera, viewSize);
+        const centerX = (bounds.minX + bounds.maxX) / 2;
+        const centerY = (bounds.minY + bounds.maxY) / 2;
+        const viewCenterX = viewSize ? viewSize.width / 2 : 0;
+        const viewCenterY = viewSize ? viewSize.height / 2 : 0;
+        const dx = centerX - viewCenterX;
+        const dy = centerY - viewCenterY;
+        const dist = dx * dx + dy * dy;
+
+        // Approximate visible area within viewport
+        const w = viewSize ? viewSize.width : 0;
+        const h = viewSize ? viewSize.height : 0;
+        const ix = Math.max(0, Math.min(bounds.maxX, w) - Math.max(bounds.minX, 0));
+        const iy = Math.max(0, Math.min(bounds.maxY, h) - Math.max(bounds.minY, 0));
+        const area = Math.round(ix * iy); // larger area => higher priority
+
+        return { area, dist };
     }
 
     getTileBounds(req, camera, viewSize) {
@@ -160,6 +259,54 @@ class RequestManager {
             minY: centerYScreen - halfSize,
             maxY: centerYScreen + halfSize
         };
+    }
+
+    updateQueuePositions() {
+        const newlyQueued = new Set();
+        let position = 1;
+        for (const req of this.queue) {
+            if (req.type === 'live' && req.options && req.options.element) {
+                this.applyQueueClass(req.options.element, position);
+                newlyQueued.add(req.options.element);
+            }
+            position++;
+        }
+        // Clear badges for elements no longer queued
+        for (const el of this.liveQueuedElements) {
+            if (!newlyQueued.has(el)) {
+                this.clearQueueClass(el);
+            }
+        }
+        this.liveQueuedElements = newlyQueued;
+    }
+
+    applyQueueClass(el, position) {
+        const prev = this.liveQueuedClass.get(el);
+        if (prev) el.classList.remove(prev);
+        el.classList.add('queued');
+        const label = position > 10 ? '10+' : String(position);
+        const cls = position > 10 ? 'queued-10plus' : `queued-${label}`;
+        el.classList.add(cls);
+        this.liveQueuedClass.set(el, cls);
+        el.dataset.queuePos = `#${label}`;
+        if (el._queueBadge) {
+            el._queueBadge.textContent = `#${label}`;
+            el._queueBadge.classList.add('visible');
+        }
+    }
+
+    clearQueueClass(el) {
+        const prev = this.liveQueuedClass.get(el);
+        if (prev) {
+            el.classList.remove(prev);
+            this.liveQueuedClass.delete(el);
+        }
+        el.classList.remove('queued');
+        delete el.dataset.queuePos;
+        if (el._queueBadge) {
+            el._queueBadge.textContent = '';
+            el._queueBadge.classList.remove('visible');
+        }
     }
 }
 
@@ -203,9 +350,12 @@ const state = {
         totalDuration: 0
     },
     // Tile Manifest
-    availableTiles: new Set()
+    availableTiles: new Set(),
+    // Backend status for live render health indicator
+    backendStatus: null
 };
 
+let queueStatusInterval = null;
 // Expose state for debugging and automation
 window.appState = state;
 
@@ -218,7 +368,6 @@ const els = {
     chkLiveRender: document.getElementById('chk-live-render'),
     queueStatus: document.getElementById('queue-status'),
     queueText: document.getElementById('queue-text'),
-    queueDebugBtn: null,
     queueDot: document.querySelector('#queue-status .status-dot'),
     inputs: {
         level: document.getElementById('in-level'),
@@ -507,9 +656,12 @@ function setupEventListeners() {
             state.liveRender = e.target.checked;
             if (state.liveRender) {
                 if (els.queueStatus) els.queueStatus.classList.remove('hidden');
-                pollQueueStatus(); // Start immediately
-                ensureQueueDebugButton();
+                refreshBackendStatus();
+                updateQueueStatusUI(); // Start immediately
+                startQueueStatusPolling();
             } else {
+                stopQueueStatusPolling();
+                state.backendStatus = null;
                 if (els.queueStatus) els.queueStatus.classList.add('hidden');
             }
         });
@@ -707,41 +859,68 @@ function setupEventListeners() {
 
     // Initialize input state
     updateInputAvailability();
-    
-    // Start Queue Polling if enabled
-    setInterval(() => {
-        if (state.liveRender) pollQueueStatus();
-    }, 200);
 }
 
-async function pollQueueStatus() {
-    const localText = `Queues: ${requestManager.queue.length} (FE)`;
-    const renderText = `Rendering: ${requestManager.activeCounts['live']}/${requestManager.limits['live']}`;
-    const downloadText = `Downloading: ${requestManager.activeCounts['worker']}/${requestManager.limits['worker']}`;
+function updateQueueStatusUI() {
+    if (!els.queueText) return;
+    const pending = requestManager.queue.length;
+    const active = requestManager.activeCounts.live;
+    const backend = state.backendStatus;
+
+    const backendActive = backend && backend.active_renders > 0;
+    const backendUp = backend && backend.up;
+
+    if (active > 0) {
+        els.queueText.textContent = `Rendering... (${pending} pending)`;
+    } else if (pending > 0) {
+        els.queueText.textContent = `Queued (${pending})`;
+    } else if (backendActive) {
+        els.queueText.textContent = `Backend rendering (${backend.active_renders}/${backend.max_concurrent})`;
+    } else if (backendUp) {
+        els.queueText.textContent = "Idle";
+    } else {
+        els.queueText.textContent = "Backend unavailable";
+    }
+
+    if (els.queueDot) {
+        if (backendActive) els.queueDot.classList.add('active');
+        else els.queueDot.classList.remove('active');
+    }
+}
+
+function startQueueStatusPolling() {
+    if (queueStatusInterval) return;
+    queueStatusInterval = setInterval(() => {
+        if (!state.liveRender) return;
+        refreshBackendStatus();
+        updateQueueStatusUI();
+    }, 300);
+}
+
+function stopQueueStatusPolling() {
+    if (queueStatusInterval) {
+        clearInterval(queueStatusInterval);
+        queueStatusInterval = null;
+    }
+}
+
+let backendStatusFetchInFlight = false;
+async function refreshBackendStatus() {
+    if (!state.liveRender) return;
+    if (backendStatusFetchInFlight) return;
+    backendStatusFetchInFlight = true;
     try {
-        const resp = await fetch(`${LIVE_SERVER_URI}/queue-status`);
+        const resp = await fetch(`${LIVE_SERVER_URI}/queue-status`, { cache: 'no-store' });
         if (resp.ok) {
-            const status = await resp.json();
-            state.lastBackendStatus = status;
-            // Update UI
-            if (els.queueText) {
-                els.queueText.style.whiteSpace = 'pre-line';
-                els.queueText.textContent = `${localText}, ${status.pending} (BE)\n${renderText}\n${downloadText}`;
-            }
-            if (els.queueDot) {
-                if (status.pending > 0 || status.active || requestManager.activeRequests.size > 0 || requestManager.queue.length > 0) {
-                    els.queueDot.classList.add('active');
-                } else {
-                    els.queueDot.classList.remove('active');
-                }
-            }
-        } else if (els.queueText) {
-            els.queueText.textContent = `${localText} | Backend: unavailable`;
+            const data = await resp.json();
+            state.backendStatus = data;
+        } else {
+            state.backendStatus = null;
         }
-    } catch (e) {
-        if (els.queueText) {
-            els.queueText.textContent = `${localText} | Backend: unavailable`;
-        }
+    } catch (err) {
+        state.backendStatus = null;
+    } finally {
+        backendStatusFetchInFlight = false;
     }
 }
 
@@ -787,65 +966,6 @@ function updateCursor() {
     
     // Always use explore cursor
     els.viewer.classList.add('explore');
-}
-
-// Attach a small debug button under queue status to dump tile info to console.
-function ensureQueueDebugButton() {
-    if (!els.queueStatus) return;
-    if (els.queueDebugBtn) return;
-
-    const btn = document.createElement('button');
-    btn.textContent = 'ℹ';
-    btn.title = 'Dump queue/render info to console';
-    btn.className = 'queue-debug-btn';
-    btn.addEventListener('click', dumpTileDebugInfo);
-    els.queueStatus.appendChild(btn);
-    els.queueDebugBtn = btn;
-}
-
-function dumpTileDebugInfo() {
-    const queue = requestManager.queue.map(req => describeRequest(req));
-    const activeLive = [];
-    const activeWorker = [];
-    for (const req of requestManager.activeRequests.values()) {
-        if ((req.type || 'worker') === 'live') activeLive.push(describeRequest(req));
-        else activeWorker.push(describeRequest(req));
-    }
-
-    console.log('[Debug] Queues');
-    console.log(' FE queue:', queue);
-    console.log(' Rendering (live):', activeLive);
-    console.log(' Downloading (static):', activeWorker);
-    const beJobs = (state.lastBackendStatus && state.lastBackendStatus.jobs) ? state.lastBackendStatus.jobs.map(describeBackendJob) : [];
-    console.log(' BE queue:', beJobs);
-}
-
-function describeRequest(req) {
-    const scale = Decimal.pow(2, req.level);
-    const gx = new Decimal(req.x).plus(0.5).div(scale);
-    const gy = new Decimal(req.y).plus(0.5).div(scale);
-    return {
-        level: req.level,
-        tile: `${req.x}/${req.y}`,
-        globalX: gx.toString(),
-        globalY: gy.toString(),
-        type: req.type || 'worker'
-    };
-}
-
-function describeBackendJob(job) {
-    const scale = Decimal.pow(2, job.level);
-    const gx = new Decimal(job.x).plus(0.5).div(scale);
-    const gy = new Decimal(job.y).plus(0.5).div(scale);
-    return {
-        level: job.level,
-        tile: `${job.x}/${job.y}`,
-        globalX: gx.toString(),
-        globalY: gy.toString(),
-        dataset: job.dataset,
-        status: job.status,
-        progress: job.progress
-    };
 }
 
 // Helper to seek when paused
@@ -1056,31 +1176,50 @@ function getTileImage(datasetId, level, x, y) {
     const key = `${datasetId}|${level}|${x}|${y}`;
 
     if (useLive) {
+        const container = document.createElement('div');
+        container.className = 'tile live-tile';
+        container.style.width = `${LOGICAL_TILE_SIZE}px`;
+        container.style.height = `${LOGICAL_TILE_SIZE}px`;
+        container.style.transformOrigin = 'top left';
+        container._tileCache = { transform: '', opacity: '', zIndex: '' };
+        container.isLoaded = false;
+
         const img = document.createElement('img');
-        img.className = 'tile live-tile';
-        img.style.width = `${LOGICAL_TILE_SIZE}px`;
-        img.style.height = `${LOGICAL_TILE_SIZE}px`;
-        img.style.transformOrigin = 'top left';
-        img._tileCache = { transform: '', opacity: '', zIndex: '' };
-        img.isLoaded = false;
-        
+        img.className = 'live-img';
+        img.width = LOGICAL_TILE_SIZE;
+        img.height = LOGICAL_TILE_SIZE;
+        img.draggable = false;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.display = 'block';
+        img.style.pointerEvents = 'none';
+
+        const badge = document.createElement('span');
+        badge.className = 'queue-badge';
+        badge.textContent = '';
+        container._queueBadge = badge;
+
         img.onload = () => {
-            img.isLoaded = true;
-            img.classList.add('loaded');
+            container.isLoaded = true;
+            container.classList.add('loaded');
             requestManager.complete(key, true);
         };
         img.onerror = () => {
-            img.isLoaded = true;
+            container.isLoaded = true;
             requestManager.complete(key, false);
         };
 
+        container.appendChild(img);
+        container.appendChild(badge);
+
         requestManager.request(datasetId, level, x, y, {
             type: 'live',
-            element: img,
+            element: container,
+            imgEl: img,
             src: `${LIVE_SERVER_URI}/live/${datasetId}/${level}/${x}/${y}.webp`
         });
 
-        return img;
+        return container;
     }
 
     const canvas = document.createElement('canvas');
@@ -1193,6 +1332,8 @@ function renderLoop() {
 
     // Keep the request queue in sync with the current view (drop stale requests)
     requestManager.prune(state.camera, state.viewSize);
+    // Refresh queued badges/positions in case the set changed after pruning
+    requestManager.updateQueuePositions();
 
     const now = performance.now();
 
