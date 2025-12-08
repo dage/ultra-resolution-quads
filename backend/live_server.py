@@ -114,10 +114,23 @@ class JobManager:
                 if j.status == "RENDERING":
                     active = True
                     break
+            jobs_list = []
+            for j in self.jobs.values():
+                if j.status in ("PENDING", "RENDERING"):
+                    jobs_list.append({
+                        "id": j.id,
+                        "dataset": j.dataset,
+                        "level": j.level,
+                        "x": j.x,
+                        "y": j.y,
+                        "status": j.status,
+                        "progress": j.progress
+                    })
             return {
                 "pending": pending,
                 "active": active,
-                "completed_count": self.completed_count
+                "completed_count": self.completed_count,
+                "jobs": jobs_list
             }
 
 job_manager = JobManager()
@@ -297,4 +310,3 @@ if __name__ == "__main__":
         uvicorn.run(app, host="0.0.0.0", port=8000)
     except Exception as e:
         print(f"Uvicorn failed: {e}")
-

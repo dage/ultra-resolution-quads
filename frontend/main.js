@@ -3,6 +3,172 @@ const LIVE_SERVER_URI = 'http://localhost:8000';
 // Logical tile size for layout; actual image resolution can differ.
 const LOGICAL_TILE_SIZE = 512;
 
+// --- Intelligent Request Manager ------------------------------------------------
+class RequestManager {
+    constructor() {
+        this.queue = [];
+        this.activeRequests = new Map();
+        // Separate lanes for live (expensive) vs worker/static (cheap)
+        this.limits = {
+            live: 2,
+            worker: 6
+        };
+        this.activeCounts = {
+            live: 0,
+            worker: 0
+        };
+        this.latestCamera = null;
+        this.latestView = null;
+        this.workerIdToRequest = new Map();
+        this.nextWorkerId = 0;
+    }
+
+    request(datasetId, level, x, y, options = {}) {
+        const id = `${datasetId}|${level}|${x}|${y}`;
+        if (this.activeRequests.has(id) || this.queue.find(r => r.id === id)) {
+            return;
+        }
+
+        const type = options.type || 'worker';
+
+        this.queue.push({ id, datasetId, level, x, y, status: 'QUEUED', type, options });
+        this.process();
+    }
+
+    resolveWorkerRequest(workerId) {
+        const reqId = this.workerIdToRequest.get(workerId);
+        if (reqId) this.workerIdToRequest.delete(workerId);
+        return reqId;
+    }
+
+    dispatch(req) {
+        const opts = req.options || {};
+        if (opts.type === 'live') {
+            // Start image download when slot is available
+            if (opts.element && opts.src) {
+                opts.element.src = opts.src;
+            }
+        } else {
+            // Worker-based tile load
+            const workerId = this.nextWorkerId++;
+            this.workerIdToRequest.set(workerId, req.id);
+            imageLoader.postMessage({ id: workerId, url: opts.url });
+        }
+    }
+
+    process() {
+        // Sort by visual impact if we have camera/view
+        if (this.latestCamera && this.latestView) {
+            const cam = this.latestCamera;
+            const view = this.latestView;
+            this.queue.sort((a, b) => this.getVisualDistance(a, cam, view) - this.getVisualDistance(b, cam, view));
+        }
+
+        for (let i = 0; i < this.queue.length; i++) {
+            const req = this.queue[i];
+            const lane = req.type || 'worker';
+            if (this.activeCounts[lane] < (this.limits[lane] ?? 0)) {
+                this.queue.splice(i, 1);
+                i--;
+                req.status = 'DISPATCHED';
+                this.activeRequests.set(req.id, req);
+                this.activeCounts[lane] = (this.activeCounts[lane] || 0) + 1;
+                this.dispatch(req);
+            }
+        }
+    }
+
+    complete(id, success = true) {
+        const req = this.activeRequests.get(id);
+        if (req && success && req.options && req.options.type === 'live') {
+            // Cache newly rendered tiles so subsequent visits treat them as existing.
+            const manifestKey = `${req.level}/${req.x}/${req.y}`;
+            state.availableTiles.add(manifestKey);
+        }
+
+        if (req) {
+            this.activeRequests.delete(id);
+            const lane = req.type || 'worker';
+            if (this.activeCounts[lane] > 0) {
+                this.activeCounts[lane]--;
+            }
+        }
+        pollQueueStatus(); // Immediate feedback after each tile
+        this.process();
+    }
+
+    prune(camera, viewSize) {
+        this.latestCamera = camera;
+        this.latestView = viewSize;
+
+        if (!camera || !viewSize) return;
+
+        const baseLevel = Math.floor(camera.globalLevel);
+        const minLevel = baseLevel - 2;
+        const maxLevel = baseLevel + 2;
+
+        const shouldKeep = (req) => {
+            if (req.level < minLevel || req.level > maxLevel) {
+                return false;
+            }
+            const bounds = this.getTileBounds(req, camera, viewSize);
+            return !(bounds.maxX < 0 || bounds.minX > viewSize.width || bounds.maxY < 0 || bounds.minY > viewSize.height);
+        };
+
+        const filtered = [];
+        for (const req of this.queue) {
+            if (shouldKeep(req)) {
+                filtered.push(req);
+            }
+        }
+        this.queue = filtered;
+    }
+
+    getVisualDistance(req, camera, viewSize) {
+        const bounds = this.getTileBounds(req, camera, viewSize);
+        const centerX = (bounds.minX + bounds.maxX) / 2;
+        const centerY = (bounds.minY + bounds.maxY) / 2;
+        const viewCenterX = viewSize ? viewSize.width / 2 : 0;
+        const viewCenterY = viewSize ? viewSize.height / 2 : 0;
+        const dx = centerX - viewCenterX;
+        const dy = centerY - viewCenterY;
+        return dx * dx + dy * dy;
+    }
+
+    getTileBounds(req, camera, viewSize) {
+        const camLevel = camera ? Number(camera.globalLevel || 0) : 0;
+        const camX = toNumber(camera ? camera.x : 0.5);
+        const camY = toNumber(camera ? camera.y : 0.5);
+        const levelScale = Math.pow(2, req.level);
+        const camX_T = camX * levelScale;
+        const camY_T = camY * levelScale;
+        const tileCenterX_T = Number(req.x) + 0.5;
+        const tileCenterY_T = Number(req.y) + 0.5;
+
+        const tileSizeOnScreen = LOGICAL_TILE_SIZE * Math.pow(2, camLevel - req.level);
+        const halfSize = tileSizeOnScreen / 2;
+
+        const dxTiles = tileCenterX_T - camX_T;
+        const dyTiles = tileCenterY_T - camY_T;
+
+        const centerXScreen = (viewSize ? viewSize.width : 0) / 2 + dxTiles * tileSizeOnScreen;
+        const centerYScreen = (viewSize ? viewSize.height : 0) / 2 + dyTiles * tileSizeOnScreen;
+
+        return {
+            minX: centerXScreen - halfSize,
+            maxX: centerXScreen + halfSize,
+            minY: centerYScreen - halfSize,
+            maxY: centerYScreen + halfSize
+        };
+    }
+}
+
+function toNumber(val) {
+    if (typeof val === 'number') return val;
+    if (val && typeof val.toNumber === 'function') return val.toNumber();
+    return parseFloat(val || 0);
+}
+
 // Application State
 // Decimal precision is set dynamically in loadDataset based on max_level.
 
@@ -52,6 +218,7 @@ const els = {
     chkLiveRender: document.getElementById('chk-live-render'),
     queueStatus: document.getElementById('queue-status'),
     queueText: document.getElementById('queue-text'),
+    queueDebugBtn: null,
     queueDot: document.querySelector('#queue-status .status-dot'),
     inputs: {
         level: document.getElementById('in-level'),
@@ -82,6 +249,9 @@ const els = {
     valKeyframeCount: document.getElementById('val-keyframe-count'),
     app: document.getElementById('app')
 };
+
+// Instantiate request manager (smart network valve)
+const requestManager = new RequestManager();
 
 // Initialization
 async function init() {
@@ -338,6 +508,7 @@ function setupEventListeners() {
             if (state.liveRender) {
                 if (els.queueStatus) els.queueStatus.classList.remove('hidden');
                 pollQueueStatus(); // Start immediately
+                ensureQueueDebugButton();
             } else {
                 if (els.queueStatus) els.queueStatus.classList.add('hidden');
             }
@@ -544,24 +715,33 @@ function setupEventListeners() {
 }
 
 async function pollQueueStatus() {
+    const localText = `Queues: ${requestManager.queue.length} (FE)`;
+    const renderText = `Rendering: ${requestManager.activeCounts['live']}/${requestManager.limits['live']}`;
+    const downloadText = `Downloading: ${requestManager.activeCounts['worker']}/${requestManager.limits['worker']}`;
     try {
         const resp = await fetch(`${LIVE_SERVER_URI}/queue-status`);
         if (resp.ok) {
             const status = await resp.json();
+            state.lastBackendStatus = status;
             // Update UI
             if (els.queueText) {
-                els.queueText.textContent = `${status.pending} Pending | ${status.active ? 'Rendering' : 'Idle'}`;
+                els.queueText.style.whiteSpace = 'pre-line';
+                els.queueText.textContent = `${localText}, ${status.pending} (BE)\n${renderText}\n${downloadText}`;
             }
             if (els.queueDot) {
-                if (status.pending > 0 || status.active) {
+                if (status.pending > 0 || status.active || requestManager.activeRequests.size > 0 || requestManager.queue.length > 0) {
                     els.queueDot.classList.add('active');
                 } else {
                     els.queueDot.classList.remove('active');
                 }
             }
+        } else if (els.queueText) {
+            els.queueText.textContent = `${localText} | Backend: unavailable`;
         }
     } catch (e) {
-        // console.warn("Queue polling failed", e);
+        if (els.queueText) {
+            els.queueText.textContent = `${localText} | Backend: unavailable`;
+        }
     }
 }
 
@@ -607,6 +787,65 @@ function updateCursor() {
     
     // Always use explore cursor
     els.viewer.classList.add('explore');
+}
+
+// Attach a small debug button under queue status to dump tile info to console.
+function ensureQueueDebugButton() {
+    if (!els.queueStatus) return;
+    if (els.queueDebugBtn) return;
+
+    const btn = document.createElement('button');
+    btn.textContent = 'ℹ';
+    btn.title = 'Dump queue/render info to console';
+    btn.className = 'queue-debug-btn';
+    btn.addEventListener('click', dumpTileDebugInfo);
+    els.queueStatus.appendChild(btn);
+    els.queueDebugBtn = btn;
+}
+
+function dumpTileDebugInfo() {
+    const queue = requestManager.queue.map(req => describeRequest(req));
+    const activeLive = [];
+    const activeWorker = [];
+    for (const req of requestManager.activeRequests.values()) {
+        if ((req.type || 'worker') === 'live') activeLive.push(describeRequest(req));
+        else activeWorker.push(describeRequest(req));
+    }
+
+    console.log('[Debug] Queues');
+    console.log(' FE queue:', queue);
+    console.log(' Rendering (live):', activeLive);
+    console.log(' Downloading (static):', activeWorker);
+    const beJobs = (state.lastBackendStatus && state.lastBackendStatus.jobs) ? state.lastBackendStatus.jobs.map(describeBackendJob) : [];
+    console.log(' BE queue:', beJobs);
+}
+
+function describeRequest(req) {
+    const scale = Decimal.pow(2, req.level);
+    const gx = new Decimal(req.x).plus(0.5).div(scale);
+    const gy = new Decimal(req.y).plus(0.5).div(scale);
+    return {
+        level: req.level,
+        tile: `${req.x}/${req.y}`,
+        globalX: gx.toString(),
+        globalY: gy.toString(),
+        type: req.type || 'worker'
+    };
+}
+
+function describeBackendJob(job) {
+    const scale = Decimal.pow(2, job.level);
+    const gx = new Decimal(job.x).plus(0.5).div(scale);
+    const gy = new Decimal(job.y).plus(0.5).div(scale);
+    return {
+        level: job.level,
+        tile: `${job.x}/${job.y}`,
+        globalX: gx.toString(),
+        globalY: gy.toString(),
+        dataset: job.dataset,
+        status: job.status,
+        progress: job.progress
+    };
 }
 
 // Helper to seek when paused
@@ -772,14 +1011,11 @@ window.activeTileElements = activeTileElements; // Expose for telemetry
 
 // Worker for image loading
 const imageLoader = new Worker('image_loader.worker.js');
-let nextReqId = 0;
-const pendingRequests = new Map(); // reqId -> key
 
 imageLoader.onmessage = function(e) {
     const { id, bitmap, error } = e.data;
-    const key = pendingRequests.get(id);
-    pendingRequests.delete(id);
-    
+    const key = requestManager.resolveWorkerRequest(id);
+
     if (!key) {
         if (bitmap) bitmap.close();
         return;
@@ -788,8 +1024,8 @@ imageLoader.onmessage = function(e) {
     // Check if tile is still active in the DOM/Virtual Map
     const el = activeTileElements.get(key);
     if (!el) {
-        // Tile was removed before it loaded
         if (bitmap) bitmap.close();
+        requestManager.complete(key, !!bitmap);
         return;
     }
 
@@ -808,13 +1044,18 @@ imageLoader.onmessage = function(e) {
         // Handle error (maybe transparent or error placeholder)
         el.isLoaded = true; // Mark as processed to avoid hanging 'areTilesReady'
     }
+
+    requestManager.complete(key, !!bitmap);
 };
 
 function getTileImage(datasetId, level, x, y) {
     const manifestKey = `${level}/${x}/${y}`;
     const exists = state.availableTiles.has(manifestKey);
+    const useLive = state.liveRender && !exists;
 
-    if (!exists && state.liveRender) {
+    const key = `${datasetId}|${level}|${x}|${y}`;
+
+    if (useLive) {
         const img = document.createElement('img');
         img.className = 'tile live-tile';
         img.style.width = `${LOGICAL_TILE_SIZE}px`;
@@ -826,12 +1067,19 @@ function getTileImage(datasetId, level, x, y) {
         img.onload = () => {
             img.isLoaded = true;
             img.classList.add('loaded');
+            requestManager.complete(key, true);
         };
         img.onerror = () => {
-            img.isLoaded = true; 
+            img.isLoaded = true;
+            requestManager.complete(key, false);
         };
-        
-        img.src = `${LIVE_SERVER_URI}/live/${datasetId}/${level}/${x}/${y}.webp`;
+
+        requestManager.request(datasetId, level, x, y, {
+            type: 'live',
+            element: img,
+            src: `${LIVE_SERVER_URI}/live/${datasetId}/${level}/${x}/${y}.webp`
+        });
+
         return img;
     }
 
@@ -839,22 +1087,16 @@ function getTileImage(datasetId, level, x, y) {
     canvas.width = LOGICAL_TILE_SIZE;
     canvas.height = LOGICAL_TILE_SIZE;
     canvas.className = 'tile';
-    // Initialize with same styles as previous img
     canvas.style.width = `${LOGICAL_TILE_SIZE}px`;
     canvas.style.height = `${LOGICAL_TILE_SIZE}px`;
     canvas.style.transformOrigin = 'top left';
     canvas._tileCache = { transform: '', opacity: '', zIndex: '' };
-    
-    // Track loading state
     canvas.isLoaded = false;
 
-    // Dispatch load request
-    const key = `${datasetId}|${level}|${x}|${y}`;
-    const url = `${BASE_DATA_URI}/datasets/${datasetId}/${level}/${x}/${y}.webp`;
-    const id = nextReqId++;
-    
-    pendingRequests.set(id, key);
-    imageLoader.postMessage({ id, url });
+    requestManager.request(datasetId, level, x, y, {
+        type: 'worker',
+        url: `${BASE_DATA_URI}/datasets/${datasetId}/${level}/${x}/${y}.webp`
+    });
 
     return canvas;
 }
@@ -948,6 +1190,9 @@ function renderLoop() {
         state.viewSize.width = rect.width;
         state.viewSize.height = rect.height;
     }
+
+    // Keep the request queue in sync with the current view (drop stale requests)
+    requestManager.prune(state.camera, state.viewSize);
 
     const now = performance.now();
 

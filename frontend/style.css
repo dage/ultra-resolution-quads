@@ -312,3 +312,57 @@ button:hover {
 .hidden {
     display: none !important;
 }
+
+.queue-debug-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 6px;
+    width: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #2a2a2a;
+    color: #eaeaea;
+    border: 1px solid #444;
+}
+
+.queue-debug-btn:hover {
+    background: #3a3a3a;
+}
+
+#queue-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+#queue-text {
+    flex: 1 1 80%;
+    white-space: pre-line;
+}
+
+#queue-status .queue-debug-btn {
+    flex: 0 0 20%;
+    max-width: 80px;
+    min-width: 48px;
+    justify-content: center;
+}
+
+.queue-debug-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 6px;
+    width: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #2a2a2a;
+    color: #eaeaea;
+    border: 1px solid #444;
+}
+
+.queue-debug-btn:hover {
+    background: #3a3a3a;
+}
