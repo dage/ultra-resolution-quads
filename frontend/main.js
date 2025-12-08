@@ -186,7 +186,7 @@ class RequestManager {
                 req.options.element.classList.remove('rendering');
             }
         }
-        updateQueueStatusUI(); // Immediate feedback after each tile
+        syncQueueStatusUI(); // Immediate feedback after each tile
         this.process();
     }
 
@@ -412,52 +412,25 @@ const state = {
 let queueStatusInterval = null;
 // Expose state for debugging and automation
 window.appState = state;
-
-// DOM Elements
-const els = {
-    viewer: document.getElementById('viewer'),
-    layers: document.getElementById('layers-container'),
-    datasetSelect: document.getElementById('dataset-select'),
-    chkDebug: document.getElementById('chk-debug'),
-    chkLiveRender: document.getElementById('chk-live-render'),
-    queueStatus: document.getElementById('queue-status'),
-    queueText: document.getElementById('queue-text'),
-    queueDot: document.querySelector('#queue-status .status-dot'),
-    inputs: {
-        level: document.getElementById('in-level'),
-        x: document.getElementById('in-x'),
-        y: document.getElementById('in-y'),
-        rotation: document.getElementById('in-rot'),
-        time: document.getElementById('in-time'),
-    },
-    vals: {
-        level: document.getElementById('val-level'),
-        x: document.getElementById('val-x'),
-        y: document.getElementById('val-y'),
-        rotation: document.getElementById('val-rot'),
-    },
-    debugStats: document.getElementById('debug-stats'),
-    experienceControls: document.getElementById('experience-controls'),
-    btns: {
-        start: document.getElementById('btn-skip-start'),
-        back: document.getElementById('btn-skip-back'),
-        playPause: document.getElementById('btn-play-pause'),
-        fwd: document.getElementById('btn-skip-fwd'),
-        end: document.getElementById('btn-skip-end')
-    },
-    btnFullscreen: document.getElementById('btn-fullscreen'),
-    btnToggleUI: document.getElementById('btn-toggle-ui'),
-    btnAddKeyframe: document.getElementById('btn-add-keyframe'),
-    btnCopyKeyframes: document.getElementById('btn-copy-keyframes'),
-    valKeyframeCount: document.getElementById('val-keyframe-count'),
-    app: document.getElementById('app')
-};
+let ui;
+let els;
 
 // Instantiate request manager (smart network valve)
 const requestManager = new RequestManager();
 
 // Initialization
 async function init() {
+    ui = new UIManager(state, {
+        onDatasetChange: (value) => loadDataset(value),
+        onLiveRenderToggle: (enabled) => handleLiveRenderToggle(enabled),
+        onUpdateExperience: (now) => updateExperience(now),
+        onForceSeek: (t) => forceSeek(t),
+        onPan: (dx, dy) => pan(dx, dy),
+        onZoom: (amount) => zoom(amount),
+        onClampDecimal: (value) => clamp01(new Decimal(value))
+    });
+    els = ui.els;
+
     const resp = await fetch(`${BASE_DATA_URI}/datasets/index.json`);
     const data = await resp.json();
     state.datasets = data.datasets;
@@ -487,9 +460,9 @@ async function init() {
         state.autoplayPending = true;
     }
     
-    setupEventListeners();
+    ui.init();
     setupUIControls();
-    updateCursor();
+    ui.updateCursor();
     
     // Initialize transform origin for rotation
     if (els.layers) els.layers.style.transformOrigin = 'center center';
@@ -551,29 +524,8 @@ function setupUIControls() {
         
         els.btnToggleUI.addEventListener('click', () => {
             els.app.classList.toggle('ui-collapsed');
-            updateToggleIcon();
+            if (ui) ui.updateToggleIcon();
         });
-    }
-}
-
-function updateToggleIcon() {
-    if (!els.btnToggleUI) return;
-    const isCollapsed = els.app.classList.contains('ui-collapsed');
-    const svg = els.btnToggleUI.querySelector('svg');
-    if (svg) {
-        // Simple visual cue: If collapsed, maybe show an icon indicating "Open Menu".
-        // If open, show "Close Menu".
-        // For now, we keep the static icon but maybe change color or opacity? 
-        // Or toggle the icon path.
-        if (isCollapsed) {
-            // Icon to "Show"
-            svg.innerHTML = '<path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>'; // Hamburger menu
-            els.btnToggleUI.title = "Show UI Panel";
-        } else {
-            // Icon to "Hide"
-            svg.innerHTML = '<path d="M4 18h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2zm0-10h16v8H4V8z"/>'; // Web Asset
-            els.btnToggleUI.title = "Hide UI Panel";
-        }
     }
 }
 
@@ -676,7 +628,7 @@ function autoSelectPath() {
     state.experience.active = false;
     if (els.btns.playPause) els.btns.playPause.textContent = '▶';
     forceSeek(0);
-    updateInputAvailability();
+    if (ui) ui.updateInputAvailability();
 }
 
 function setExperienceControlsEnabled(enabled) {
@@ -689,265 +641,12 @@ function setExperienceControlsEnabled(enabled) {
     }
 }
 
-function setupEventListeners() {
-    // Dataset Select
-    els.datasetSelect.addEventListener('change', (e) => loadDataset(e.target.value));
-    
-    // Debug Mode Toggle
-    if (els.chkDebug) {
-        els.chkDebug.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                document.body.classList.add('debug');
-            } else {
-                document.body.classList.remove('debug');
-            }
-        });
-    }
-    
-    // Live Render Toggle
-    if (els.chkLiveRender) {
-        els.chkLiveRender.addEventListener('change', (e) => {
-            state.liveRender = e.target.checked;
-            if (state.liveRender) {
-                if (els.queueStatus) els.queueStatus.classList.remove('hidden');
-                refreshBackendStatus();
-                updateQueueStatusUI(); // Start immediately
-                startQueueStatusPolling();
-            } else {
-                stopQueueStatusPolling();
-                state.backendStatus = null;
-                if (els.queueStatus) els.queueStatus.classList.add('hidden');
-            }
-        });
-    }
-
-    // Path Controls
-    // els.pathSelect listener removed
-    
-    // Play/Pause Toggle
-    els.btns.playPause.addEventListener('click', () => {
-        if (!state.activePath) return;
-        
-        if (state.experience.active) {
-            // Pause
-            state.experience.active = false;
-            els.btns.playPause.textContent = '▶';
-            // elapsed is already tracked in updateExperience, but let's ensure it's stable
-            // No specific action needed as currentElapsed is updated in render loop or maintained
-        } else {
-            // Play
-            // If we are at the end, restart
-            if (state.experience.currentElapsed >= state.experience.totalDuration) {
-                state.experience.currentElapsed = 0;
-            }
-            
-            state.experience.active = true;
-            state.experience.startTime = performance.now() - state.experience.currentElapsed;
-            els.btns.playPause.textContent = '⏸';
-        }
-        updateInputAvailability();
-    });
-
-    // Skip Buttons
-    els.btns.start.addEventListener('click', () => {
-        state.experience.currentElapsed = 0;
-        if (state.experience.active) state.experience.startTime = performance.now();
-        updateExperience(state.experience.active ? performance.now() : 0); 
-        // If paused, we need to force update with a fake 'now' that respects the 0 elapsed
-        if (!state.experience.active) forceSeek(0);
-        updateInputAvailability();
-    });
-
-    els.btns.end.addEventListener('click', () => {
-        state.experience.currentElapsed = state.experience.totalDuration;
-        state.experience.active = false;
-        els.btns.playPause.textContent = '▶';
-        forceSeek(state.experience.totalDuration);
-        updateInputAvailability();
-    });
-    
-    els.btns.back.addEventListener('click', () => {
-        let t = state.experience.currentElapsed - 10000;
-        if (t < 0) t = 0;
-        state.experience.currentElapsed = t;
-        if (state.experience.active) state.experience.startTime = performance.now() - t;
-        else forceSeek(t);
-        updateInputAvailability();
-    });
-
-    els.btns.fwd.addEventListener('click', () => {
-        let t = state.experience.currentElapsed + 10000;
-        if (t > state.experience.totalDuration) t = state.experience.totalDuration;
-        state.experience.currentElapsed = t;
-        if (state.experience.active) state.experience.startTime = performance.now() - t;
-        else forceSeek(t);
-        updateInputAvailability();
-    });
-
-    // Scrubber
-    els.inputs.time.addEventListener('input', (e) => {
-        state.experience.active = false; // Pause playback on scrub
-        els.btns.playPause.textContent = '▶';
-        
-        const scrubbedFraction = parseFloat(e.target.value);
-        const scrubbedTime = state.experience.totalDuration * scrubbedFraction;
-        
-        state.experience.currentElapsed = scrubbedTime;
-        forceSeek(scrubbedTime);
-        updateInputAvailability();
-    });
-
-    // Mouse Interactions
-    els.viewer.addEventListener('mousedown', (e) => {
-        // Prevent drag initiation if clicking on UI controls within the viewer
-        if (e.target.closest('button') || e.target.closest('.control-btn')) return;
-
-        state.isDragging = true;
-        state.lastMouse = { x: e.clientX, y: e.clientY };
-    });
-    
-    window.addEventListener('mouseup', () => state.isDragging = false);
-    
-    window.addEventListener('mousemove', (e) => {
-        if (!state.isDragging) return;
-        
-        // Pause playback on manual interaction
-        if (state.experience.active) {
-            state.experience.active = false;
-            els.btns.playPause.textContent = '▶';
-            updateInputAvailability();
-        }
-        
-        const dx = e.clientX - state.lastMouse.x;
-        const dy = e.clientY - state.lastMouse.y;
-        state.lastMouse = { x: e.clientX, y: e.clientY };
-        
-        pan(dx, dy);
-    });
-    
-    els.viewer.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        
-        // Pause playback on manual interaction
-        if (state.experience.active) {
-            state.experience.active = false;
-            els.btns.playPause.textContent = '▶';
-            updateInputAvailability();
-        }
-
-        zoom(-e.deltaY * 0.002); // Zoom factor
-    }, { passive: false });
-    
-    // Camera Inputs
-    els.inputs.level.addEventListener('input', (e) => { 
-        const lvl = parseInt(e.target.value);
-        if (!Number.isNaN(lvl)) {
-            state.camera.globalLevel = Math.max(0, lvl);
-            updateUI(); 
-        }
-    });
-    els.inputs.x.addEventListener('input', (e) => { 
-        try { state.camera.x = clamp01(new Decimal(e.target.value)); updateUI(); } catch(err) {}
-    });
-    els.inputs.y.addEventListener('input', (e) => { 
-        try { state.camera.y = clamp01(new Decimal(e.target.value)); updateUI(); } catch(err) {}
-    });
-    els.inputs.rotation.addEventListener('input', (e) => { 
-        state.camera.rotation = parseFloat(e.target.value); 
-        updateUI(); 
-    });
-
-    // Keyboard Shortcuts
-    window.addEventListener('keydown', (e) => {
-        if (e.code === 'Space') {
-            e.preventDefault(); // Prevent scrolling
-            if (els.btns.playPause) els.btns.playPause.click();
-        }
-        if (e.code === 'Escape') {
-            e.preventDefault();
-            if (els.btnToggleUI) els.btnToggleUI.click();
-        }
-    });
-
-    // Reset Button
-    // els.btnReset.addEventListener('click', resetCamera);
-
-    // Add Keyframe
-    if (els.btnAddKeyframe) {
-        els.btnAddKeyframe.addEventListener('click', () => {
-            const kf = {
-                camera: {
-                    globalLevel: state.camera.globalLevel,
-                    globalX: state.camera.x.toString(), // Preserve Decimal precision as string
-                    globalY: state.camera.y.toString(),
-                    rotation: state.camera.rotation || 0,
-                    note: `Keyframe ${state.capturedKeyframes.length + 1}`
-                }
-            };
-            state.capturedKeyframes.push(kf);
-            if (els.valKeyframeCount) {
-                els.valKeyframeCount.textContent = `(${state.capturedKeyframes.length})`;
-            }
-            console.log("Keyframe added:", kf);
-        });
-    }
-
-    // Copy Keyframes
-    if (els.btnCopyKeyframes) {
-        els.btnCopyKeyframes.addEventListener('click', () => {
-            const json = JSON.stringify(state.capturedKeyframes, null, 2);
-            // Use Clipboard API if available, else log
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(json).then(() => {
-                    console.log("Keyframes copied to clipboard.");
-                    // Optional visual feedback
-                    const originalText = els.btnCopyKeyframes.textContent;
-                    els.btnCopyKeyframes.textContent = "✓";
-                    setTimeout(() => els.btnCopyKeyframes.textContent = originalText, 1000);
-                }).catch(err => console.error("Clipboard failed:", err));
-            } else {
-                console.log("Clipboard API unavailable. Keyframes:", json);
-            }
-        });
-    }
-
-    // Initialize input state
-    updateInputAvailability();
-}
-
-function updateQueueStatusUI() {
-    if (!els.queueText) return;
-    const pending = requestManager.queue.length;
-    const active = requestManager.activeCounts.live;
-    const backend = state.backendStatus;
-
-    const backendActive = backend && backend.active_renders > 0;
-    const backendUp = backend && backend.up;
-
-    if (active > 0) {
-        els.queueText.textContent = `Rendering... (${pending} pending)`;
-    } else if (pending > 0) {
-        els.queueText.textContent = `Queued (${pending})`;
-    } else if (backendActive) {
-        els.queueText.textContent = `Backend rendering (${backend.active_renders}/${backend.max_concurrent})`;
-    } else if (backendUp) {
-        els.queueText.textContent = "Idle";
-    } else {
-        els.queueText.textContent = "Backend unavailable";
-    }
-
-    if (els.queueDot) {
-        if (backendActive) els.queueDot.classList.add('active');
-        else els.queueDot.classList.remove('active');
-    }
-}
-
 function startQueueStatusPolling() {
     if (queueStatusInterval) return;
     queueStatusInterval = setInterval(() => {
         if (!state.liveRender) return;
         refreshBackendStatus();
-        updateQueueStatusUI();
+        syncQueueStatusUI();
     }, 300);
 }
 
@@ -956,6 +655,29 @@ function stopQueueStatusPolling() {
         clearInterval(queueStatusInterval);
         queueStatusInterval = null;
     }
+}
+
+function handleLiveRenderToggle(enabled) {
+    state.liveRender = enabled;
+    if (enabled) {
+        if (els && els.queueStatus) els.queueStatus.classList.remove('hidden');
+        refreshBackendStatus();
+        syncQueueStatusUI();
+        startQueueStatusPolling();
+    } else {
+        stopQueueStatusPolling();
+        state.backendStatus = null;
+        if (els && els.queueStatus) els.queueStatus.classList.add('hidden');
+    }
+}
+
+function syncQueueStatusUI() {
+    if (!ui) return;
+    ui.updateQueueStatus({
+        pending: requestManager.queue.length,
+        activeLive: requestManager.activeCounts.live,
+        backend: state.backendStatus
+    });
 }
 
 let backendStatusFetchInFlight = false;
@@ -997,29 +719,9 @@ function resetCamera() {
 
     state.experience.currentElapsed = 0;
     state.experience.active = false;
-    updateUI();
-    updateInputAvailability();
+    if (ui) ui.update();
+    if (ui) ui.updateInputAvailability();
     forceSeek(0);
-}
-
-function updateInputAvailability() {
-    const disabled = !!state.experience.active;
-    els.inputs.level.disabled = disabled;
-    els.inputs.x.disabled = disabled;
-    els.inputs.y.disabled = disabled;
-    els.inputs.rotation.disabled = disabled;
-    
-    if (els.experienceControls) {
-        els.experienceControls.style.display = 'block';
-    }
-}
-
-function updateCursor() {
-    // Clear classes first
-    els.viewer.classList.remove('explore', 'experience');
-    
-    // Always use explore cursor
-    els.viewer.classList.add('explore');
 }
 
 // Helper to seek when paused
@@ -1057,36 +759,12 @@ function pan(dx, dy) {
 
     state.camera.x = clamp01(state.camera.x.minus(worldPerPixel.times(dx_w)));
     state.camera.y = clamp01(state.camera.y.minus(worldPerPixel.times(dy_w)));
-    updateUI();
+    if (ui) ui.update();
 }
 
 function zoom(amount) {
     state.camera.globalLevel = Math.max(0, state.camera.globalLevel + amount);
-    updateUI();
-}
-
-const LOG10_2 = Math.log10 ? Math.log10(2) : Math.LOG10E * Math.LN2;
-function positionPrecision(level) {
-    const levelDigits = Math.ceil(Math.max(0, level) * LOG10_2);
-    // Keep a reasonable floor/ceiling to avoid unbounded strings
-    return Math.max(6, Math.min(50, levelDigits + 3));
-}
-
-function updateUI() {
-    if (!els.vals.level) return;
-    const lvl = Math.floor(state.camera.globalLevel);
-    const zoomOffset = state.camera.globalLevel - lvl;
-    const posDigits = positionPrecision(state.camera.globalLevel);
-    els.vals.level.textContent = lvl + " (+ " + zoomOffset.toFixed(3) + ")";
-    if (els.vals.x) els.vals.x.textContent = state.camera.x.toFixed(posDigits);
-    if (els.vals.y) els.vals.y.textContent = state.camera.y.toFixed(posDigits);
-    if (els.vals.rotation) els.vals.rotation.textContent = (state.camera.rotation || 0).toFixed(3);
-    
-    // Only update inputs if they are not focused to allow editing without overwrite
-    if (document.activeElement !== els.inputs.level) els.inputs.level.value = lvl;
-    if (document.activeElement !== els.inputs.x) els.inputs.x.value = state.camera.x.toFixed(posDigits);
-    if (document.activeElement !== els.inputs.y) els.inputs.y.value = state.camera.y.toFixed(posDigits);
-    if (document.activeElement !== els.inputs.rotation) els.inputs.rotation.value = (state.camera.rotation || 0).toFixed(3);
+    if (ui) ui.update();
 }
 
 // Experience (Path Playback) Logic
@@ -1150,7 +828,7 @@ function updateExperience(now) {
             state.experience.currentElapsed = state.experience.totalDuration;
             state.experience.active = false;
             els.btns.playPause.textContent = '▶';
-            updateInputAvailability();
+            if (ui) ui.updateInputAvailability();
         }
 
         updateExperienceWithElapsed(state.experience.currentElapsed);
@@ -1170,7 +848,7 @@ function updateExperienceWithElapsed(elapsed) {
     state.camera.y = cam.y;
     state.camera.rotation = cam.rotation || 0;
 
-    updateUI();
+    if (ui) ui.update();
 
     // Update scrubber position
     if (els.inputs.time && state.experience.totalDuration > 0) {
@@ -1459,7 +1137,7 @@ function renderLoop() {
                 state.experience.active = true;
                 
                 if (els.btns.playPause) els.btns.playPause.textContent = '⏸';
-                updateInputAvailability();
+                if (ui) ui.updateInputAvailability();
             } else {
                 console.warn("Autoplay: No active path found.");
             }
