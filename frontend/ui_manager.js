@@ -48,6 +48,40 @@ class UIManager {
         this.setupEventListeners();
         this.updateToggleIcon();
         this.updateCursor();
+
+        // Initialize Path Panel
+        const pathContainer = document.getElementById('path-panel-container');
+        if (pathContainer && window.PathPanel) {
+            this.pathPanel = new PathPanel(pathContainer);
+            
+            this.pathPanel.onJump((index) => {
+                this.callbacks.onPathJump?.(index);
+            });
+            
+            this.pathPanel.onAdd(() => {
+                this.callbacks.onPathAdd?.();
+            });
+            
+            this.pathPanel.onDelete((index) => {
+                this.callbacks.onPathDelete?.(index);
+            });
+
+            this.pathPanel.onCopy((btn) => {
+                this.callbacks.onPathCopy?.(btn);
+            });
+        }
+    }
+
+    updatePathList(keyframes) {
+        if (this.pathPanel) {
+            this.pathPanel.render(keyframes);
+        }
+    }
+
+    updatePathActive(index) {
+        if (this.pathPanel) {
+            this.pathPanel.setActive(index);
+        }
     }
 
     updateQueueStatus({ pending, activeLive, backend }) {

@@ -397,3 +397,63 @@ button:hover {
     flex: 1 1 80%;
     white-space: pre-line;
 }
+
+/* Path Panel Styles */
+#path-panel-container {
+    display: flex;
+    flex-direction: column;
+    max-height: 400px;
+}
+
+.path-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    border: 1px solid #444;
+    background: #222;
+    margin-bottom: 10px;
+    max-height: 200px; /* Force scroll for list */
+}
+
+.keyframe-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.keyframe-item:hover {
+    background-color: #333;
+}
+
+.keyframe-item.active {
+    background-color: #445544;
+    border-left: 3px solid #0f0;
+}
+
+.keyframe-item .keyframe-info {
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.keyframe-item .delete-btn {
+    width: 20px;
+    height: 20px;
+    line-height: 1;
+    padding: 0;
+    margin: 0;
+    margin-left: 10px;
+    background: transparent;
+    color: #999;
+    font-size: 16px;
+    border-radius: 50%;
+}
+
+.keyframe-item .delete-btn:hover {
+    background: #400;
+    color: #f00;
+}

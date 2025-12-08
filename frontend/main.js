@@ -395,6 +395,7 @@ const state = {
     // Experience (Path Playback) State
     path: null,
     activePath: null,
+    activeKeyframeIdx: -1, // Tracks the currently selected or active keyframe
     pathSampler: null,
     experience: {
         active: false,
@@ -427,7 +428,13 @@ async function init() {
         onForceSeek: (t) => forceSeek(t),
         onPan: (dx, dy) => pan(dx, dy),
         onZoom: (amount) => zoom(amount),
-        onClampDecimal: (value) => clamp01(new Decimal(value))
+        onClampDecimal: (value) => clamp01(new Decimal(value)),
+        
+        // Path Panel Callbacks
+        onPathJump: (idx) => jumpToKeyframe(idx),
+        onPathAdd: () => addKeyframeAtCurrentView(),
+        onPathDelete: (idx) => deleteKeyframe(idx),
+        onPathCopy: (btn) => copyPathToClipboard(btn)
     });
     els = ui.els;
 
@@ -436,6 +443,9 @@ async function init() {
     state.datasets = data.datasets;
     
     populateDatasetSelect();
+    
+    // Initialize UI (PathPanel, Listeners) early so it catches dataset/path updates
+    ui.init();
 
     // Parse Query Parameters
     const params = new URLSearchParams(window.location.search);
@@ -460,7 +470,6 @@ async function init() {
         state.autoplayPending = true;
     }
     
-    ui.init();
     setupUIControls();
     ui.updateCursor();
     
@@ -469,6 +478,151 @@ async function init() {
     
     requestAnimationFrame(renderLoop);
 }
+
+// --- Path Manipulation Logic ---
+
+function jumpToKeyframe(index) {
+    if (!state.activePath || !state.activePath.keyframes) return;
+    const kf = state.activePath.keyframes[index];
+    if (!kf) return;
+    
+    // Update active index
+    state.activeKeyframeIdx = index;
+    if (ui) ui.updatePathActive(index);
+
+    // 1. Set Camera to exact keyframe (for precision)
+    const cam = kf.camera || kf;
+    state.camera.globalLevel = cam.globalLevel ?? cam.level ?? 0;
+    state.camera.x = new Decimal(cam.x ?? 0.5);
+    state.camera.y = new Decimal(cam.y ?? 0.5);
+    state.camera.rotation = cam.rotation || 0;
+
+    // 2. Sync Timeline / Progress Bar
+    if (state.pathSampler && state.pathSampler.stops && state.pathSampler.stops.length > index) {
+        // Stops correspond to keyframes. stops[0] = 0.
+        const dist = state.pathSampler.stops[index];
+        // Calculate time based on constant speed
+        const timeSec = dist / PATH_SPEED.visualUnitsPerSecond;
+        const timeMs = timeSec * 1000;
+        
+        // UPDATE STATE
+        state.experience.currentElapsed = timeMs;
+        
+        // IMPORTANT: Reset StartTime so next Play click doesn't jump!
+        // This effectively "seeks" the internal clock to match the new visual position.
+        state.experience.startTime = performance.now() - timeMs;
+
+        // UPDATE UI
+        if (els.inputs.time && state.experience.totalDuration > 0) {
+             // Use clamp to ensure 0-1 range
+             const progress = Math.min(Math.max(timeMs / state.experience.totalDuration, 0), 1);
+             els.inputs.time.value = progress.toFixed(4);
+        }
+    }
+    
+    if (ui) ui.update();
+}
+
+function addKeyframeAtCurrentView() {
+    // 1. Create Keyframe from current camera
+    const kf = {
+        camera: {
+            globalLevel: state.camera.globalLevel,
+            x: state.camera.x.toString(), // Store as string for JSON precision
+            y: state.camera.y.toString(),
+            rotation: state.camera.rotation || 0
+        }
+    };
+
+    // 2. Ensure we have an active path object
+    if (!state.activePath) {
+        state.activePath = { keyframes: [] };
+    }
+    if (!state.activePath.keyframes) {
+        state.activePath.keyframes = [];
+    }
+
+    // 3. Insert AFTER the currently active keyframe
+    // If nothing selected (idx = -1), insert at end (or 0 if empty)
+    let insertAt = state.activePath.keyframes.length;
+    if (state.activeKeyframeIdx !== -1 && state.activeKeyframeIdx < state.activePath.keyframes.length) {
+        insertAt = state.activeKeyframeIdx + 1;
+    }
+
+    state.activePath.keyframes.splice(insertAt, 0, kf);
+    
+    // Update active index to the new frame
+    state.activeKeyframeIdx = insertAt;
+
+    // 4. Rebuild
+    updatePathState();
+}
+
+function deleteKeyframe(index) {
+    if (!state.activePath || !state.activePath.keyframes) return;
+    state.activePath.keyframes.splice(index, 1);
+    
+    // Adjust active index
+    if (state.activeKeyframeIdx === index) {
+        // If we deleted the active one, select the previous one (or 0)
+        state.activeKeyframeIdx = Math.max(0, index - 1);
+        if (state.activePath.keyframes.length === 0) state.activeKeyframeIdx = -1;
+    } else if (state.activeKeyframeIdx > index) {
+        // Shift down
+        state.activeKeyframeIdx--;
+    }
+
+    updatePathState();
+}
+
+function updatePathState() {
+    // Rebuild Sampler
+    state.pathSampler = CameraPath.buildSampler(state.activePath);
+    
+    // Update Timing
+    recalculateExperienceTiming();
+    
+    // Enable/Disable Controls based on validity
+    const isValid = state.activePath && state.activePath.keyframes && state.activePath.keyframes.length >= 2;
+    setExperienceControlsEnabled(isValid);
+
+    if (!isValid) {
+        // Stop playback if path is broken
+        state.experience.active = false;
+        if (els.btns.playPause) els.btns.playPause.textContent = '▶';
+        state.experience.currentElapsed = 0;
+        state.experience.totalDuration = 0;
+    }
+
+    // Update UI
+    if (ui) {
+        ui.updatePathList(state.activePath ? state.activePath.keyframes : []);
+        ui.updatePathActive(state.activeKeyframeIdx);
+        ui.updateInputAvailability(); // Refresh disabled states
+    }
+}
+
+function copyPathToClipboard(btn) {
+    if (!state.activePath || !state.activePath.keyframes) return;
+    
+    // Format nicely
+    const json = JSON.stringify(state.activePath.keyframes, null, 2);
+    
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(json).then(() => {
+            const originalText = btn.textContent;
+            btn.textContent = "✓";
+            setTimeout(() => btn.textContent = originalText, 1000);
+            console.log("Path copied to clipboard.");
+        }).catch(err => {
+            console.error("Clipboard failed:", err);
+            console.log("Path JSON:", json);
+        });
+    } else {
+        console.log("Path JSON:", json);
+    }
+}
+
 
 function setupUIControls() {
     // 1. Fullscreen Logic
@@ -605,6 +759,8 @@ function setActivePath(path) {
         : (path || null);
 
     state.activePath = resolved;
+    if (ui) ui.updatePathList(state.activePath ? state.activePath.keyframes : []);
+
     if (!resolved || typeof CameraPath === 'undefined') {
         state.pathSampler = null;
         return;
@@ -839,6 +995,30 @@ function updateExperienceWithElapsed(elapsed) {
     if (!state.activePath || !state.pathSampler || state.experience.totalDuration <= 0) return;
 
     const clamped = Math.min(Math.max(elapsed, 0), state.experience.totalDuration);
+
+    // Update Active Highlight in Path Panel
+    if (ui && state.experience.segmentDurations) {
+        let t = 0;
+        let activeIdx = 0;
+        // Find which segment we are in
+        for (let i = 0; i < state.experience.segmentDurations.length; i++) {
+            if (clamped < t + state.experience.segmentDurations[i]) {
+                activeIdx = i;
+                break;
+            }
+            t += state.experience.segmentDurations[i];
+            activeIdx = i + 1; // If we passed this segment, we are at least at the next one
+        }
+        // Clamp to last keyframe
+        if (activeIdx >= state.activePath.keyframes.length) {
+            activeIdx = state.activePath.keyframes.length - 1;
+        }
+        
+        // Sync state and UI
+        state.activeKeyframeIdx = activeIdx;
+        ui.updatePathActive(activeIdx);
+    }
+
     const progress = state.experience.totalDuration > 0 ? (clamped / state.experience.totalDuration) : 0;
     const cam = state.pathSampler.cameraAtProgress(progress);
     if (!cam) return;
