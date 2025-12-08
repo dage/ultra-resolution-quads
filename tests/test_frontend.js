@@ -20,6 +20,12 @@ const document = {
     removeEventListener: () => {},
     fullscreenElement: null,
     exitFullscreen: () => Promise.resolve(),
+    querySelector: () => ({
+        classList: {
+            add: () => {},
+            remove: () => {}
+        }
+    }),
     documentElement: {
         requestFullscreen: () => Promise.resolve(),
         style: {}

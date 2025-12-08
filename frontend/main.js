@@ -192,28 +192,58 @@ class RequestManager {
 
         if (!camera || !viewSize) return;
 
-        const baseLevel = Math.floor(camera.globalLevel);
-        const minLevel = baseLevel - 2;
-        const maxLevel = baseLevel + 2;
-
-        const shouldKeep = (req) => {
-            if (req.level < minLevel || req.level > maxLevel) {
-                return false;
-            }
-            const bounds = this.getTileBounds(req, camera, viewSize);
-            return !(bounds.maxX < 0 || bounds.minX > viewSize.width || bounds.maxY < 0 || bounds.minY > viewSize.height);
-        };
-
-        const filtered = [];
+        // 1. Identify which levels are currently in the queue
+        const levelsToCheck = new Set();
         for (const req of this.queue) {
-            if (shouldKeep(req)) {
+            levelsToCheck.add(req.level);
+        }
+
+        // 2. Build a "Allow List" of valid tiles for those levels
+        // We use the exact same ViewUtils logic as the renderer.
+        const validTileKeys = new Set();
+        
+        // Optimization: Only check levels close to the camera to avoid
+        // expensive calculations for stale requests deep in the queue.
+        const baseLevel = Math.floor(camera.globalLevel);
+        
+        for (const lvl of levelsToCheck) {
+            if (Math.abs(lvl - baseLevel) > 2) continue;
+
+            const visible = ViewUtils.getVisibleTilesForLevel(
+                camera, 
+                lvl, 
+                viewSize.width, 
+                viewSize.height, 
+                LOGICAL_TILE_SIZE
+            );
+            
+            for (const t of visible.tiles) {
+                validTileKeys.add(`${lvl}|${t.x}|${t.y}`);
+            }
+        }
+
+        // 3. Filter the queue using the Allow List
+        // This implicitly handles the "Radius" check because invalid 
+        // tiles simply won't be in validTileKeys.
+        let prunedCount = 0;
+        const filtered = [];
+
+        for (const req of this.queue) {
+            const key = `${req.level}|${req.x}|${req.y}`;
+            if (validTileKeys.has(key)) {
                 filtered.push(req);
             } else {
+                prunedCount++;
                 if (req.type === 'live' && req.options && req.options.element) {
                     this.clearQueueClass(req.options.element);
                 }
             }
         }
+        
+        if (prunedCount > 0) {
+            // Optional: console.log(`Pruned ${prunedCount} off-screen tiles`);
+        }
+        
         this.queue = filtered;
     }
 
@@ -1375,6 +1405,15 @@ function areTilesReady() {
     return true;
 }
 
+function updateQueueBadgeOrientation(rotationRad) {
+    const angle = rotationRad || 0;
+    for (const el of activeTileElements.values()) {
+        if (el && el._queueBadge) {
+            el._queueBadge.style.transform = `translate(-50%, -50%) rotate(${angle}rad)`;
+        }
+    }
+}
+
 function renderLoop() {
     // 1. Update View Size (Robust handling of resize & UI transitions)
     if (els.viewer) {
@@ -1422,6 +1461,7 @@ function renderLoop() {
     if (els.layers) {
         const rot = state.camera.rotation || 0;
         els.layers.style.transform = `rotate(${-rot}rad)`;
+        updateQueueBadgeOrientation(rot);
     }
 
     if (!state.activeDatasetId || !state.config) {
