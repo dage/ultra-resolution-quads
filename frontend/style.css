@@ -298,23 +298,24 @@ button:hover {
 }
 
 .live-tile.queued {
-    outline: 1px dashed rgba(0, 255, 0, 0.3);
+    outline: 4px dashed rgba(0, 255, 0, 0.3);
 }
 
 .live-tile .queue-badge {
     position: absolute;
-    top: 6px;
-    left: 6px;
-    padding: 2px 6px;
-    font-size: 12px;
-    font-weight: 600;
-    background: rgba(0, 200, 0, 0.9);
-    color: #fff;
-    border-radius: 6px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 10px 18px;
+    font-size: 22px;
+    font-weight: 700;
+    background: rgba(80, 200, 120, 0.35);
+    color: #e8ffe8;
+    border-radius: 12px;
     pointer-events: none;
-    box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.25);
     opacity: 0;
-    transition: opacity 0.2s;
+    transition: opacity 0.1s;
 }
 
 .live-tile .queue-badge.visible {

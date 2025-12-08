@@ -76,6 +76,7 @@ class RequestManager {
                         return;
                     }
                     if (!resp.ok) {
+                        replaceLiveTileWithCanvas(req.id, opts.element, null, imgEl);
                         this.complete(req.id, false);
                         return;
                     }
@@ -83,10 +84,23 @@ class RequestManager {
                     const blob = await resp.blob();
                     const objectUrl = URL.createObjectURL(blob);
 
-                    imgEl.onload = () => {
-                        imgEl.isLoaded = true;
-                        imgEl.classList.add('loaded');
+            const swapFromBitmap = (bitmap) => {
+                replaceLiveTileWithCanvas(req.id, opts.element, bitmap, imgEl);
+            };
+                    try {
+                        const bitmap = await createImageBitmap(blob);
+                        swapFromBitmap(bitmap);
+                        bitmap.close();
                         URL.revokeObjectURL(objectUrl);
+                        this.complete(req.id, true);
+                        return;
+                    } catch (err) {
+                        console.warn('createImageBitmap failed, falling back to img path', err);
+                    }
+
+                    imgEl.onload = () => {
+                        URL.revokeObjectURL(objectUrl);
+                        swapFromBitmap(null);
                         this.complete(req.id, true);
                     };
 
@@ -1128,6 +1142,45 @@ function updateExperienceWithElapsed(elapsed) {
 // Rendering
 const activeTileElements = new Map(); // Key: "level|x|y", Value: DOM Element
 window.activeTileElements = activeTileElements; // Expose for telemetry
+
+// Replace a live tile wrapper with a canvas (used after live render finishes or fails).
+function replaceLiveTileWithCanvas(id, container, bitmap, imgEl) {
+    if (!container) return;
+
+    const w = (bitmap && bitmap.width) || (imgEl && imgEl.naturalWidth) || LOGICAL_TILE_SIZE;
+    const h = (bitmap && bitmap.height) || (imgEl && imgEl.naturalHeight) || LOGICAL_TILE_SIZE;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.className = 'tile';
+    canvas.style.width = `${LOGICAL_TILE_SIZE}px`;
+    canvas.style.height = `${LOGICAL_TILE_SIZE}px`;
+    canvas.style.transformOrigin = 'top left';
+
+    const cache = container._tileCache || {};
+    const ctx = canvas.getContext('2d');
+    if (bitmap) {
+        ctx.drawImage(bitmap, 0, 0, w, h);
+    } else if (imgEl && imgEl.complete) {
+        ctx.drawImage(imgEl, 0, 0, w, h);
+    } else {
+        ctx.clearRect(0, 0, w, h);
+    }
+
+    canvas.isLoaded = true;
+    canvas.classList.add('loaded');
+    canvas._tileCache = { ...cache };
+    if (cache.transform) canvas.style.transform = cache.transform;
+    if (cache.opacity) canvas.style.opacity = cache.opacity;
+    if (cache.zIndex !== undefined) canvas.style.zIndex = cache.zIndex;
+
+    const parent = container.parentNode;
+    if (parent) parent.replaceChild(canvas, container);
+    if (activeTileElements.get(id) === container) {
+        activeTileElements.set(id, canvas);
+    }
+}
 
 // Worker for image loading
 const imageLoader = new Worker('image_loader.worker.js');
