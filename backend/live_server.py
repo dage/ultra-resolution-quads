@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from backend.constants import TILE_EXTENSION, TILE_FORMAT, TILE_WEBP_PARAMS
-from backend.renderer_utils import load_renderer
+from backend.renderer_utils import load_renderer, generate_tile_manifest
 
 # Constants
 DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -23,6 +23,42 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("LiveRenderer")
 
 app = FastAPI()
+
+# Global state
+last_manifest_update = 0
+manifest_update_interval = 60  # seconds
+
+@app.on_event("startup")
+async def start_manifest_updater():
+    def updater_loop():
+        global last_manifest_update
+        while True:
+            time.sleep(manifest_update_interval)
+            try:
+                # Identify datasets that have been accessed (in cache)
+                # We could also just scan the datasets directory, but cache is safer/faster focus.
+                # Or just scan all datasets to be safe. Let's scan all directories in datasets/
+                # to ensure we capture everything, as the overhead is per-dataset.
+                # Actually, profiling showed 2s for a large dataset.
+                # Scanning ALL datasets might be too heavy if there are many.
+                # Let's restrict to datasets currently in renderer_cache (active ones).
+                
+                datasets_to_update = list(renderer_cache.keys())
+                if not datasets_to_update:
+                    continue
+
+                logger.info(f"Running scheduled manifest update for: {datasets_to_update}")
+                for ds_id in datasets_to_update:
+                    ds_dir = os.path.join(DATA_ROOT, 'datasets', ds_id)
+                    generate_tile_manifest(ds_dir)
+                
+                last_manifest_update = time.time()
+                
+            except Exception as e:
+                logger.error(f"Error in manifest updater loop: {e}")
+
+    thread = threading.Thread(target=updater_loop, daemon=True)
+    thread.start()
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,6 +108,7 @@ def queue_status():
         "active_renders": current,
         "max_concurrent": MAX_CONCURRENT_RENDERS,
         "busy": current >= MAX_CONCURRENT_RENDERS,
+        "last_manifest_update": last_manifest_update
     }
 
 # --- Endpoints ---

@@ -15,7 +15,7 @@ from PIL import Image
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from backend.constants import TILE_EXTENSION, TILE_FORMAT, TILE_WEBP_PARAMS
-from backend.renderer_utils import load_renderer, format_time
+from backend.renderer_utils import load_renderer, format_time, generate_tile_manifest
 import camera_utils
 
 DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -138,42 +138,6 @@ def _render_tile(args):
     img = _renderer_instance.render(level, x, y)
     img.save(img_path, format=TILE_FORMAT, **TILE_WEBP_PARAMS)
     return True, time.time() - t0
-
-def generate_tile_manifest(dataset_dir):
-    """
-    Scans the dataset directory for all existing .webp tiles and writes a 'tiles.json'
-    manifest file containing a flat list of "level/x/y" strings.
-    This allows the frontend to know exactly which tiles exist without 404s.
-    """
-    if not os.path.exists(dataset_dir):
-        return
-
-    manifest_path = os.path.join(dataset_dir, 'tiles.json')
-    tiles = []
-    
-    # Walk the directory
-    # Structure is dataset_dir/level/x/y.webp
-    for root, dirs, files in os.walk(dataset_dir):
-        for file in files:
-            if file.endswith(TILE_EXTENSION):
-                try:
-                    # root should be .../dataset_id/level/x
-                    # file is y.webp
-                    parts = root.split(os.sep)
-                    x = parts[-1]
-                    level = parts[-2]
-                    y = file.replace(TILE_EXTENSION, "")
-                    
-                    # Verify structure (simple check)
-                    if level.isdigit() and x.isdigit() and y.isdigit():
-                        tiles.append(f"{level}/{x}/{y}")
-                except IndexError:
-                    # Unexpected directory structure, skip
-                    pass
-    
-    with open(manifest_path, 'w') as f:
-        json.dump(tiles, f)
-    # print(f"Updated tile manifest at {manifest_path} ({len(tiles)} tiles)")
 
 def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, num_workers=8):
     """Render a list of (level, x, y, base_path) tasks, skipping those already present."""

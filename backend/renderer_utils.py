@@ -1,7 +1,14 @@
 import importlib
 import inspect
 import os
+import json
+import sys
 from typing import Any, Dict
+
+# Add project root to path to find constants
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from backend.constants import TILE_EXTENSION
 
 def calculate_max_iter(level, base=2000, increment=200):
     """
@@ -65,3 +72,39 @@ def format_time(seconds: float) -> str:
     parts.append(f"{s}s")
     
     return " ".join(parts)
+
+def generate_tile_manifest(dataset_dir):
+    """
+    Scans the dataset directory for all existing .webp tiles and writes a 'tiles.json'
+    manifest file containing a flat list of "level/x/y" strings.
+    This allows the frontend to know exactly which tiles exist without 404s.
+    """
+    if not os.path.exists(dataset_dir):
+        return
+
+    manifest_path = os.path.join(dataset_dir, 'tiles.json')
+    tiles = []
+    
+    # Walk the directory
+    # Structure is dataset_dir/level/x/y.webp
+    for root, dirs, files in os.walk(dataset_dir):
+        for file in files:
+            if file.endswith(TILE_EXTENSION):
+                try:
+                    # root should be .../dataset_id/level/x
+                    # file is y.webp
+                    parts = root.split(os.sep)
+                    x = parts[-1]
+                    level = parts[-2]
+                    y = file.replace(TILE_EXTENSION, "")
+                    
+                    # Verify structure (simple check)
+                    if level.isdigit() and x.isdigit() and y.isdigit():
+                        tiles.append(f"{level}/{x}/{y}")
+                except IndexError:
+                    # Unexpected directory structure, skip
+                    pass
+    
+    with open(manifest_path, 'w') as f:
+        json.dump(tiles, f)
+
