@@ -46,3 +46,22 @@ def load_renderer(renderer_path: str, tile_size: int, renderer_kwargs: Dict[str,
         return renderer_cls(**kwargs)
     except TypeError as exc:
         raise TypeError(f"Failed to instantiate renderer '{renderer_path}' with args {kwargs}: {exc}") from exc
+
+def format_time(seconds: float) -> str:
+    """
+    Formats a duration in seconds into a short string like '1h 20m 3s' or '45s'.
+    """
+    if seconds <= 0:
+        return "0s"
+    
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    
+    parts = []
+    if h > 0:
+        parts.append(f"{h}h")
+    if m > 0:
+        parts.append(f"{m}m")
+    parts.append(f"{s}s")
+    
+    return " ".join(parts)

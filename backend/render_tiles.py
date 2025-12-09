@@ -15,7 +15,7 @@ from PIL import Image
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from backend.constants import TILE_EXTENSION, TILE_FORMAT, TILE_WEBP_PARAMS
-from backend.renderer_utils import load_renderer
+from backend.renderer_utils import load_renderer, format_time
 import camera_utils
 
 DATA_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -196,19 +196,31 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
          print("Multithreading disabled by configuration.")
 
     def _process_progress(idx, total):
-        nonlocal last_update_time, batch_duration, batch_count
+        nonlocal last_update_time, batch_count, batch_duration
         now = time.time()
-        if now - last_update_time > 60:
-            avg = batch_duration / batch_count if batch_count > 0 else 0.0
-            print(f"Rendering {idx}/{total}... Avg generation (last {batch_count}): {avg:.2f}s", flush=True)
+        wall_elapsed = now - last_update_time
+        
+        if wall_elapsed > 60:
+            # Calculate effective speed (wall clock time)
+            # This handles parallelism correctly (e.g., 8 tiles in 10s -> 0.8 tiles/s avg, or 1.25s/tile)
+            avg_wall_per_tile = wall_elapsed / batch_count if batch_count > 0 else 0.0
+            
+            # CPU time average (just for info, if needed, or we can drop it)
+            # avg_cpu_per_tile = batch_duration / batch_count if batch_count > 0 else 0.0
+            
+            remaining = total - idx
+            eta_seconds = remaining * avg_wall_per_tile
+            eta_str = format_time(eta_seconds)
+            
+            print(f"Rendering {idx}/{total}... Avg (wall): {avg_wall_per_tile:.2f}s/tile... ETA: {eta_str}", flush=True)
             
             # Periodically update the manifest so the frontend can see progress live
             if dataset_dir:
                 generate_tile_manifest(dataset_dir)
             
             last_update_time = now
-            batch_duration = 0.0
             batch_count = 0
+            batch_duration = 0.0
 
     if use_multiprocessing:
         workers = num_workers if num_workers and num_workers > 0 else 8
