@@ -89,13 +89,16 @@ class UIManager {
 
         const backendActive = backend && backend.active_renders > 0;
         const backendUp = backend && backend.up;
+        const progress = backend && backend.progress;
 
-        if (activeLive > 0) {
-            this.els.queueText.textContent = `Rendering... (${pending} pending)`;
+        if (activeLive > 0 || backendActive) {
+            if (progress) {
+                this.els.queueText.textContent = `Rendering ${progress} (${pending} pending)`;
+            } else {
+                this.els.queueText.textContent = `Rendering... (${pending} pending)`;
+            }
         } else if (pending > 0) {
             this.els.queueText.textContent = `Queued (${pending})`;
-        } else if (backendActive) {
-            this.els.queueText.textContent = `Backend rendering (${backend.active_renders}/${backend.max_concurrent})`;
         } else if (backendUp) {
             this.els.queueText.textContent = "Idle";
         } else {
@@ -103,7 +106,7 @@ class UIManager {
         }
 
         if (this.els.queueDot) {
-            if (backendActive) this.els.queueDot.classList.add('active');
+            if (backendActive || activeLive > 0) this.els.queueDot.classList.add('active');
             else this.els.queueDot.classList.remove('active');
         }
     }

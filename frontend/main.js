@@ -842,7 +842,7 @@ async function refreshBackendStatus() {
     if (backendStatusFetchInFlight) return;
     backendStatusFetchInFlight = true;
     try {
-        const resp = await fetch(`${LIVE_SERVER_URI}/queue-status`, { cache: 'no-store' });
+        const resp = await fetch(`${LIVE_SERVER_URI}/status`, { cache: 'no-store' });
         if (resp.ok) {
             const data = await resp.json();
             state.backendStatus = data;
