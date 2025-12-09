@@ -308,23 +308,42 @@ class RequestManager {
     }
 
     getTileBounds(req, camera, viewSize) {
-        const camLevel = camera ? Number(camera.globalLevel || 0) : 0;
-        const camX = toNumber(camera ? camera.x : 0.5);
-        const camY = toNumber(camera ? camera.y : 0.5);
-        const levelScale = Math.pow(2, req.level);
-        const camX_T = camX * levelScale;
-        const camY_T = camY * levelScale;
-        const tileCenterX_T = Number(req.x) + 0.5;
-        const tileCenterY_T = Number(req.y) + 0.5;
+        // 1. Sanitize Camera Inputs (Ensure they are Decimals)
+        const cam = camera || { x: 0.5, y: 0.5, globalLevel: 0 };
+        const camX = (cam.x instanceof Decimal) ? cam.x : new Decimal(cam.x || 0.5);
+        const camY = (cam.y instanceof Decimal) ? cam.y : new Decimal(cam.y || 0.5);
+        const camLevel = Number(cam.globalLevel || 0);
 
-        const tileSizeOnScreen = LOGICAL_TILE_SIZE * Math.pow(2, camLevel - req.level);
+        // 2. Calculate Scale Factors
+        // tileLevelScale = 2^tileLevel (The huge coordinate multiplier)
+        const tileLevelScale = Decimal.pow(2, req.level);
+        
+        // displayScale = 2^(camLevel - tileLevel) (How big the tile is on screen)
+        const displayScale = Math.pow(2, camLevel - req.level);
+        const tileSizeOnScreen = LOGICAL_TILE_SIZE * displayScale;
         const halfSize = tileSizeOnScreen / 2;
 
-        const dxTiles = tileCenterX_T - camX_T;
-        const dyTiles = tileCenterY_T - camY_T;
+        // 3. High-Precision Coordinate Math
+        // We calculate the positions in "Tile Units" at the tile's level.
+        // Tile Center = integer_index + 0.5
+        const tileCenterX = new Decimal(req.x).plus(0.5);
+        const tileCenterY = new Decimal(req.y).plus(0.5);
 
-        const centerXScreen = (viewSize ? viewSize.width : 0) / 2 + dxTiles * tileSizeOnScreen;
-        const centerYScreen = (viewSize ? viewSize.height : 0) / 2 + dyTiles * tileSizeOnScreen;
+        // Camera Center = global_01_coord * 2^level
+        const camCenterX = camX.times(tileLevelScale);
+        const camCenterY = camY.times(tileLevelScale);
+
+        // 4. Calculate Delta (The Result is small enough for standard Numbers)
+        // Critical Fix: Do the subtraction in Decimal BEFORE converting to Number
+        const dxTiles = tileCenterX.minus(camCenterX).toNumber();
+        const dyTiles = tileCenterY.minus(camCenterY).toNumber();
+
+        // 5. Convert to Screen Coordinates
+        const viewW = viewSize ? viewSize.width : 0;
+        const viewH = viewSize ? viewSize.height : 0;
+
+        const centerXScreen = (viewW / 2) + (dxTiles * tileSizeOnScreen);
+        const centerYScreen = (viewH / 2) + (dyTiles * tileSizeOnScreen);
 
         return {
             minX: centerXScreen - halfSize,

@@ -117,36 +117,46 @@
 
     /**
      * Creates a Linear Segment (P1 -> P2).
-     * Supports "Swoop" interpolation for Deep Zooms to minimize visual path length.
+     * Simplified Strategy: Always prefer Swoop (Geodesic) unless mathematically impossible.
      */
-    const createLine = (p1, p2, isDeepZoom) => {
+    const createLine = (p1, p2, _ignoredDeepZoomFlag) => {
         // Pre-calculate widths for "Swoop" interpolation
-        const w1 = Math.pow(2, -p1.globalLevel);
-        const w2 = Math.pow(2, -p2.globalLevel);
-        const wDelta = w2 - w1;
+        const two = new Decimal(2);
+        const w1 = Decimal.pow(two, -p1.globalLevel);
+        const w2 = Decimal.pow(two, -p2.globalLevel);
+        const wDelta = w2.minus(w1);
+
+        // Check if we have a valid width change to support Swoop.
+        // If wDelta is effectively zero (Pure Pan), we must use Linear to avoid division by zero.
+        const canSwoop = !wDelta.isZero();
 
         return {
             type: 'line',
             p1, p2,
             eval: (t) => { // t in [0, 1]
                 // Linearly interpolate non-spatial properties
-                const lvl = p1.globalLevel + (p2.globalLevel - p1.globalLevel) * t;
+                // We use Decimal for level interpolation to avoid precision loss when 
+                // level difference is tiny (< 1e-15), which would cause 's' to snap to 0 or 1.
+                const dL1 = new Decimal(p1.globalLevel);
+                const dL2 = new Decimal(p2.globalLevel);
+                const dLvl = dL1.plus(dL2.minus(dL1).times(t));
+                
                 const rot = p1.rotation + (p2.rotation - p1.rotation) * t;
                 
-                // Spatial Interpolation
-                let s = t; 
-                if (isDeepZoom && Math.abs(wDelta) > 1e-15) {
-                    // "Swoop": Interpolate X/Y linearly with Width (Scale) instead of Level/Time.
-                    // This moves the camera primarily when Width is large (Zoomed Out), 
-                    // avoiding the "diagonal drift" at deep levels that creates massive visual distance.
-                    const wCurr = Math.pow(2, -lvl);
-                    s = (wCurr - w1) / wDelta;
+                let s = new Decimal(t); 
+                
+                // UNIFIED LOGIC:
+                // If we can swoop, we swoop. This handles Deep Zooms, Shallow Zooms, 
+                // and Micro-drifts correctly without arbitrary thresholds.
+                if (canSwoop) {
+                    const wCurr = Decimal.pow(two, dLvl.negated());
+                    s = wCurr.minus(w1).div(wDelta);
                 }
                 
                 const x = p1.x.plus(p2.x.minus(p1.x).times(s));
                 const y = p1.y.plus(p2.y.minus(p1.y).times(s));
                 
-                return { x, y, globalLevel: lvl, rotation: rot };
+                return { x, y, globalLevel: dLvl.toNumber(), rotation: rot };
             }
         };
     };
@@ -161,16 +171,22 @@
             type: 'corner',
             p0, p1, p2,
             eval: (t) => { // t in [0, 1]
-                const inv = 1 - t;
-                const b0 = inv * inv;
-                const b1 = 2 * inv * t;
-                const b2 = t * t;
+                const decT = new Decimal(t);
+                const one = new Decimal(1);
+                const inv = one.minus(decT);
+                
+                // Basis functions in Decimal
+                const b0 = inv.times(inv);
+                const b1 = inv.times(decT).times(2);
+                const b2 = decT.times(decT);
                 
                 // Bezier Blend
                 const x = p0.x.times(b0).plus(p1.x.times(b1)).plus(p2.x.times(b2));
                 const y = p0.y.times(b0).plus(p1.y.times(b1)).plus(p2.y.times(b2));
-                const lvl = p0.globalLevel * b0 + p1.globalLevel * b1 + p2.globalLevel * b2;
-                const rot = p0.rotation * b0 + p1.rotation * b1 + p2.rotation * b2;
+                
+                // Linear Level/Rot (sufficient for now)
+                const lvl = p0.globalLevel * b0.toNumber() + p1.globalLevel * b1.toNumber() + p2.globalLevel * b2.toNumber();
+                const rot = p0.rotation * b0.toNumber() + p1.rotation * b1.toNumber() + p2.rotation * b2.toNumber();
                 
                 return { x, y, globalLevel: lvl, rotation: rot };
             }
