@@ -718,8 +718,16 @@ function populateDatasetSelect() {
     });
 }
 
+function updateDatasetQueryParam(datasetId) {
+    if (!datasetId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('dataset', datasetId);
+    history.replaceState(null, '', url.toString());
+}
+
 async function loadDataset(id) {
     state.activeDatasetId = id;
+    updateDatasetQueryParam(id);
     // Load Config
     const respConfig = await fetch(`${BASE_DATA_URI}/datasets/${id}/config.json`);
     state.config = await respConfig.json();
