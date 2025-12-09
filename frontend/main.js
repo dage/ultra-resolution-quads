@@ -28,11 +28,36 @@ class RequestManager {
 
     request(datasetId, level, x, y, options = {}) {
         const id = `${datasetId}|${level}|${x}|${y}`;
-        if (this.activeRequests.has(id) || this.queue.find(r => r.id === id)) {
+        const type = options.type || 'worker';
+
+        // If a live request for this tile is already active/queued, rebind it to the new DOM
+        // element so the rendering/queued indicators stay in sync when tiles are recreated.
+        const active = this.activeRequests.get(id);
+        if (active) {
+            if (active.type === 'live' && type === 'live' && active.options) {
+                if (options.element && active.options.element !== options.element) {
+                    this.clearQueueClass(active.options.element);
+                    active.options.element = options.element;
+                }
+                if (options.imgEl) active.options.imgEl = options.imgEl;
+                if (this.liveInFlight === id && active.options.element) {
+                    active.options.element.classList.add('rendering');
+                }
+            }
             return;
         }
 
-        const type = options.type || 'worker';
+        const queued = this.queue.find(r => r.id === id);
+        if (queued) {
+            if (queued.type === 'live' && type === 'live') {
+                if (options.element && queued.options && queued.options.element !== options.element) {
+                    this.clearQueueClass(queued.options.element);
+                }
+                queued.options = { ...(queued.options || {}), ...options, type: 'live' };
+                this.updateQueuePositions();
+            }
+            return;
+        }
 
         this.queue.push({ id, datasetId, level, x, y, status: 'QUEUED', type, options });
         this.process();
