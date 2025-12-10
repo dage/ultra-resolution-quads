@@ -233,8 +233,9 @@ def get_live_tile(dataset: str, level: int, x: int, y: int):
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"Starting Stateless Live Renderer (Max {MAX_CONCURRENT_RENDERS} concurrent)...")
+    port = int(os.environ.get("BACKEND_PORT", 8002))
+    print(f"Starting Stateless Live Renderer (Max {MAX_CONCURRENT_RENDERS} concurrent) on port {port}...")
     try:
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"Uvicorn failed: {e}")

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Ports
-BACKEND_PORT="${BACKEND_PORT:-8000}"
+BACKEND_PORT="${BACKEND_PORT:-8002}"
 FRONTEND_PORT="${FRONTEND_PORT:-8001}"
 
 RED=""
@@ -22,6 +22,7 @@ fi
 
 # Ensure Python output is unbuffered so logs stream immediately
 export PYTHONUNBUFFERED=1
+export BACKEND_PORT
 
 kill_on_port() {
     local port="$1"

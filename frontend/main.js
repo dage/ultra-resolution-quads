@@ -1,5 +1,5 @@
 const BASE_DATA_URI = '..';
-const LIVE_SERVER_URI = 'http://localhost:8000';
+const LIVE_SERVER_URI = 'http://localhost:8002';
 // Logical tile size for layout; actual image resolution can differ.
 const LOGICAL_TILE_SIZE = 512;
 
