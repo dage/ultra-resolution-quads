@@ -6,7 +6,7 @@ import os
 import shutil
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 from typing import Any, Dict
 
 from PIL import Image
@@ -189,18 +189,30 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
     if use_multiprocessing:
         workers = num_workers if num_workers and num_workers > 0 else 8
         print(f"Rendering {len(tasks)} missing tiles with {workers} workers...")
+        
+        pool = multiprocessing.Pool(processes=workers, initializer=_init_renderer_worker, initargs=(renderer,))
         try:
-            with ProcessPoolExecutor(max_workers=workers, initializer=_init_renderer_worker, initargs=(renderer,)) as executor:
-                for idx, (created, duration) in enumerate(executor.map(_render_tile, tasks), 1):
-                    if created:
-                        generated += 1
-                    
-                    batch_duration += duration
-                    batch_count += 1
-                    _process_progress(idx, len(tasks))
+            for idx, (created, duration) in enumerate(pool.imap_unordered(_render_tile, tasks), 1):
+                if created:
+                    generated += 1
+                
+                batch_duration += duration
+                batch_count += 1
+                _process_progress(idx, len(tasks))
+            
+            pool.close()
+            pool.join()
+
+        except KeyboardInterrupt:
+            print("\nInterrupted by user. Terminating workers...")
+            pool.terminate()
+            pool.join()
+            sys.exit(1)
 
         except Exception as e:
             print(f"Parallel rendering failed ({e}); falling back to single-process mode...")
+            pool.terminate()
+            pool.join()
             use_multiprocessing = False
 
     if not use_multiprocessing:
