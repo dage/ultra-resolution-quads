@@ -194,7 +194,10 @@ class RequestManager {
         if (req && success && req.options && req.options.type === 'live') {
             // Cache newly rendered tiles so subsequent visits treat them as existing.
             const manifestKey = `${req.level}/${req.x}/${req.y}`;
-            state.availableTiles.add(manifestKey);
+            if (!state.availableTiles.has(manifestKey)) {
+                state.availableTiles.add(manifestKey);
+                addParsedTile(req.level, req.x, req.y);
+            }
         }
 
         if (req) {
@@ -212,6 +215,10 @@ class RequestManager {
             }
         }
         syncQueueStatusUI(); // Immediate feedback after each tile
+        if (document.body.classList.contains('debug') && els.debugCanvas) {
+             const ctx = els.debugCanvas.getContext('2d');
+             drawDebugTiles(ctx, state.camera, state.viewSize);
+        }
         this.process();
     }
 
@@ -450,9 +457,26 @@ const state = {
     },
     // Tile Manifest
     availableTiles: new Set(),
+    parsedTiles: new Map(),
     // Backend status for live render health indicator
     backendStatus: null
 };
+
+function addParsedTile(level, x, y) {
+    if (!(state.parsedTiles instanceof Map)) {
+        state.parsedTiles = new Map();
+    }
+    const levelKey = Number(level);
+    if (!state.parsedTiles.has(levelKey)) {
+        state.parsedTiles.set(levelKey, []);
+    }
+    const tiles = state.parsedTiles.get(levelKey);
+    tiles.push({
+        level: levelKey,
+        x: x instanceof Decimal ? x : new Decimal(x),
+        y: y instanceof Decimal ? y : new Decimal(y)
+    });
+}
 
 let queueStatusInterval = null;
 // Expose state for debugging and automation
@@ -481,6 +505,7 @@ async function init() {
         onPathCopy: (btn) => copyPathToClipboard(btn)
     });
     els = ui.els;
+    els.debugCanvas = document.getElementById('debug-canvas');
 
     const resp = await fetch(`${BASE_DATA_URI}/datasets/index.json`);
     const data = await resp.json();
@@ -779,13 +804,22 @@ async function loadDataset(id) {
 
     // Load Tile Manifest (to avoid 404s)
     state.availableTiles.clear();
+    state.parsedTiles = new Map(); // Reset parsed tiles grouped by level
     try {
-        const respTiles = await fetch(`${BASE_DATA_URI}/datasets/${id}/tiles.json`);
+        const respTiles = await fetch(`${BASE_DATA_URI}/datasets/${id}/tiles.json?t=${Date.now()}`);
         if (respTiles.ok) {
             const tilesList = await respTiles.json();
             // Use a Set for O(1) lookups
             state.availableTiles = new Set(tilesList);
             console.log(`Loaded manifest: ${state.availableTiles.size} tiles available.`);
+            
+            // Pre-parse for debug rendering grouped by level
+            state.parsedTiles = new Map();
+            for (const str of tilesList) {
+                const parts = str.split('/');
+                const level = parseInt(parts[0], 10);
+                addParsedTile(level, parts[1], parts[2]);
+            }
         } else {
             console.warn("No tiles.json found; tile checking disabled (assumes all exist).");
         }
@@ -1333,6 +1367,62 @@ function updateQueueBadgeOrientation(rotationRad) {
     }
 }
 
+function drawDebugTiles(ctx, camera, viewSize) {
+    if (!ctx || !(state.parsedTiles instanceof Map)) return;
+
+    const width = viewSize.width;
+    const height = viewSize.height;
+    ctx.clearRect(0, 0, width, height);
+
+    const prevComposite = ctx.globalCompositeOperation;
+    const prevAlpha = ctx.globalAlpha;
+    const prevFill = ctx.fillStyle;
+
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const camGlobalLevel = camera.globalLevel;
+    const baseLevel = Math.floor(camGlobalLevel);
+    const fillColor = '#00FF00';
+    const levelAlpha = 0.18; // Keep tint visible without washing out when multiple levels overlap
+
+    for (const [level, tiles] of state.parsedTiles.entries()) {
+        if (level < 2) continue; // Skip levels 0 and 1
+        if (level < baseLevel) continue; // Skip coarser levels above the camera
+        if (!tiles || tiles.length === 0) continue;
+
+        const scale = Math.pow(2, camGlobalLevel - level);
+        const sizeOnScreen = LOGICAL_TILE_SIZE * scale;
+        const levelScale = Decimal.pow(2, level);
+        const camX_at_Level = camera.x.times(levelScale);
+        const camY_at_Level = camera.y.times(levelScale);
+
+        const levelPath = new Path2D();
+
+        for (const tile of tiles) {
+            ctx.beginPath();
+            const dX = tile.x.minus(camX_at_Level).toNumber();
+            const dY = tile.y.minus(camY_at_Level).toNumber();
+            const x = centerX + dX * sizeOnScreen;
+            const y = centerY + dY * sizeOnScreen;
+
+            levelPath.rect(x, y, sizeOnScreen, sizeOnScreen);
+        }
+
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = levelAlpha;
+        ctx.fillStyle = fillColor;
+        ctx.fill(levelPath);
+        ctx.globalAlpha = levelAlpha * 0.8;
+        ctx.strokeStyle = '#00FF00';
+        ctx.lineWidth = 1;
+        ctx.stroke(levelPath);
+    }
+
+    ctx.globalCompositeOperation = prevComposite;
+    ctx.globalAlpha = prevAlpha;
+    ctx.fillStyle = prevFill;
+}
+
 function renderLoop() {
     // 1. Update View Size (Robust handling of resize & UI transitions)
     if (els.viewer) {
@@ -1451,8 +1541,20 @@ function renderLoop() {
     // Apply any new tiles in a single DOM append to minimize layout/paint churn.
     batch.flush();
     
-    if (document.body.classList.contains('debug') && els.debugStats) {
-        els.debugStats.textContent = `Tiles: ${activeTileElements.size}`;
+    if (document.body.classList.contains('debug')) {
+        if (els.debugStats) {
+            els.debugStats.textContent = `Tiles: ${activeTileElements.size}`;
+        }
+        if (els.debugCanvas) {
+            // Resize if needed (or every frame to handle resize)
+            // Setting width/height clears the canvas, so we do it anyway.
+            if (els.debugCanvas.width !== state.viewSize.width || els.debugCanvas.height !== state.viewSize.height) {
+                els.debugCanvas.width = state.viewSize.width;
+                els.debugCanvas.height = state.viewSize.height;
+            }
+            const ctx = els.debugCanvas.getContext('2d');
+            drawDebugTiles(ctx, state.camera, state.viewSize);
+        }
     }
     
     requestAnimationFrame(renderLoop);
