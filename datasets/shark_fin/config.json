@@ -1,0 +1,18 @@
+{
+  "id": "shark_fin",
+  "name": "Shark Fin",
+  "description": "Shark Fin fractal based on Burning Ship flavor.",
+  "tile_size": 1024,
+  "renderer": "datasets.shark_fin.render:SharkFinRenderer",
+  "renderer_args": {
+      "root_x": -0.5,
+      "root_y": -0.65,
+      "root_dx": 0.5,
+      "supersampling": "2x2"
+  },
+  "supports_multithreading": false,
+  "render_config": {
+    "mode": "full",
+    "max_level": 6
+  }
+}

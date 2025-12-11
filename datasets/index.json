@@ -29,6 +29,16 @@
       "id": "perp_bs_trees",
       "name": "Perp. BS Trees",
       "description": "Perpendicular Burning Ship Trees (Fractal Gallery #7)."
+    },
+    {
+      "id": "shark_fin",
+      "name": "Shark Fin",
+      "description": "Shark Fin fractal based on Burning Ship flavor."
+    },
+    {
+      "id": "multibrot_p4",
+      "name": "Multibrot Power 4",
+      "description": "Mandelbrot set with exponent 4 (Degree 4)."
     }
   ]
 }

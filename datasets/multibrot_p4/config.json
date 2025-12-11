@@ -1,0 +1,18 @@
+{
+  "id": "multibrot_p4",
+  "name": "Multibrot Power 4",
+  "description": "Mandelbrot set with exponent 4 (Degree 4).",
+  "tile_size": 1024,
+  "renderer": "datasets.multibrot_p4.render:MultibrotP4Renderer",
+  "renderer_args": {
+      "root_x": 0.0,
+      "root_y": 0.0,
+      "root_dx": 2.5,
+      "supersampling": "2x2"
+  },
+  "supports_multithreading": false,
+  "render_config": {
+    "mode": "full",
+    "max_level": 4
+  }
+}
