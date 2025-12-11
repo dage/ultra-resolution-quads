@@ -19,18 +19,18 @@
       "keyframes": [
         { 
           "camera": { 
-            "globalLevel": 0, 
-            "globalX": 0.5, 
-            "globalY": 0.5, 
+            "level": 0, 
+            "x": 0.5, 
+            "y": 0.5, 
             "rotation": 0, 
             "note": "Start: Root View" 
           } 
         },
         { 
           "camera": { 
-            "globalLevel": 10, 
-            "globalX": 0.35, 
-            "globalY": 0.43, 
+            "level": 10, 
+            "x": 0.35, 
+            "y": 0.43, 
             "rotation": 6.28318,
             "note": "End: Center of Top-Right Quadrant (Tile 1,0)" 
           } 

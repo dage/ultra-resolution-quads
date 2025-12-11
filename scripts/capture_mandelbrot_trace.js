@@ -26,7 +26,7 @@ const fs = require('fs');
     transferMode: 'ReturnAsStream'
   });
 
-  await page.goto('http://localhost:8000/frontend/index.html', { waitUntil: 'networkidle' });
+  await page.goto('http://localhost:8002/frontend/index.html', { waitUntil: 'networkidle' });
   await page.waitForSelector('#dataset-select');
   await page.selectOption('#dataset-select', 'mandelbrot_single_precision');
   await page.waitForTimeout(500);

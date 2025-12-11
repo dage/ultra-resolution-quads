@@ -149,8 +149,21 @@
                 // If we can swoop, we swoop. This handles Deep Zooms, Shallow Zooms, 
                 // and Micro-drifts correctly without arbitrary thresholds.
                 if (canSwoop) {
-                    const wCurr = Decimal.pow(two, dLvl.negated());
-                    s = wCurr.minus(w1).div(wDelta);
+                    // OPTIMIZATION: Hybrid approach
+                    // For shallow levels, Number precision is sufficient.
+                    // For deep levels (>34), we need Decimal to avoid grid-snapping/jitter.
+                    if (dLvl.toNumber() < 34) {
+                        // Fast Path (Primitive Math)
+                        const wCurrNum = Math.pow(2, -dLvl.toNumber());
+                        const w1Num = w1.toNumber();
+                        const wDeltaNum = wDelta.toNumber();
+                        const sNum = (wCurrNum - w1Num) / wDeltaNum;
+                        s = new Decimal(sNum);
+                    } else {
+                        // Precise Path (Decimal Pow)
+                        const wCurr = Decimal.pow(two, dLvl.negated());
+                        s = wCurr.minus(w1).div(wDelta);
+                    }
                 }
                 
                 const x = p1.x.plus(p2.x.minus(p1.x).times(s));
@@ -197,7 +210,7 @@
 
     function buildSampler(path) {
         const keyframes = path && Array.isArray(path.keyframes) ? path.keyframes : [];
-        const cams = keyframes.map(k => resolveCameraMacros(k.camera || k));
+        const cams = keyframes.map(k => normalizeCamera(k.camera || k));
 
         if (cams.length === 0) return { cameraAtProgress: () => null, pointAtProgress: () => null };
         if (cams.length === 1) {
@@ -360,62 +373,6 @@
         };
     }
 
-    // --- Macro Resolution ---
-
-    const MANDELBROT_BOUNDS = {
-        centerRe: new Decimal("-0.75"),
-        centerIm: new Decimal("0.0"),
-        width: new Decimal("3.0"),
-        height: new Decimal("3.0")
-    };
-
-    const resolveGlobalMacro = (cam) => {
-        if (cam.globalX === undefined || cam.globalY === undefined) return null;
-        return normalizeCamera({ ...cam, x: cam.globalX, y: cam.globalY });
-    };
-
-    const resolveMandelbrotMacro = (cam) => {
-        if (cam.re === undefined || cam.im === undefined) return null;
-        const re = new Decimal(cam.re);
-        const im = new Decimal(cam.im);
-        const { centerRe, centerIm, width, height } = MANDELBROT_BOUNDS;
-        const minRe = centerRe.minus(width.div(2));
-        const maxIm = centerIm.plus(height.div(2));
-        
-        // Normalized coordinates
-        const gx = re.minus(minRe).div(width);
-        const gy = maxIm.minus(im).div(height);
-        
-        return normalizeCamera({ ...cam, x: gx, y: gy });
-    };
-
-    const resolveCameraMacros = (cam) => {
-        if (!cam || typeof cam !== 'object') return cam;
-        const macro = cam.macro;
-        
-        if (macro === 'mandelbrot' || macro === 'mandelbrot_point' || macro === 'mb') {
-            const res = resolveMandelbrotMacro(cam);
-            if (res) return res;
-        }
-        
-        if (macro === 'global' || (cam.globalX !== undefined && cam.globalY !== undefined)) {
-            const res = resolveGlobalMacro(cam);
-            if (res) return res;
-        }
-        
-        return normalizeCamera(cam);
-    };
-
-    const resolvePathMacros = (path) => {
-        if (!path || !Array.isArray(path.keyframes)) return path;
-        const keyframes = path.keyframes.map(kf => {
-            const cam = kf.camera || kf;
-            const resolved = resolveCameraMacros(cam);
-            return { ...kf, camera: resolved };
-        });
-        return { ...path, keyframes };
-    };
-
     // Export
-    return { buildSampler, resolvePathMacros };
+    return { buildSampler };
 }));

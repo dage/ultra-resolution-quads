@@ -10,6 +10,7 @@ const vm = require('vm');
 // Helper to load file from project root (since we are running from tests/)
 const PROJECT_ROOT = path.join(__dirname, '..');
 const MAIN_JS_PATH = path.join(PROJECT_ROOT, 'frontend', 'main.js');
+const UI_MANAGER_PATH = path.join(PROJECT_ROOT, 'frontend', 'ui_manager.js');
 const VIEW_UTILS_PATH = path.join(PROJECT_ROOT, 'shared', 'view_utils.js');
 const DECIMAL_PATH = path.join(PROJECT_ROOT, 'shared', 'libs', 'decimal.min.js');
 
@@ -89,6 +90,10 @@ if (!fs.existsSync(MAIN_JS_PATH)) {
     console.error(`Error: Could not find ${MAIN_JS_PATH}`);
     process.exit(1);
 }
+if (!fs.existsSync(UI_MANAGER_PATH)) {
+    console.error(`Error: Could not find ${UI_MANAGER_PATH}`);
+    process.exit(1);
+}
 if (!fs.existsSync(VIEW_UTILS_PATH)) {
     console.error(`Error: Could not find ${VIEW_UTILS_PATH}`);
     process.exit(1);
@@ -99,13 +104,14 @@ if (!fs.existsSync(DECIMAL_PATH)) {
 }
 
 let mainJsContent = fs.readFileSync(MAIN_JS_PATH, 'utf8');
+const uiManagerContent = fs.readFileSync(UI_MANAGER_PATH, 'utf8');
 let viewUtilsContent = fs.readFileSync(VIEW_UTILS_PATH, 'utf8');
 const decimalContent = fs.readFileSync(DECIMAL_PATH, 'utf8');
 
 // Expose variables by changing const to var so they attach to the sandbox global scope.
 // This allows us to inspect internal state that is not exported.
 mainJsContent = mainJsContent.replace('const state =', 'var state =');
-mainJsContent = mainJsContent.replace('const els =', 'var els =');
+mainJsContent = mainJsContent.replace('let els;', 'var els;'); // FIX: els is let, not const
 mainJsContent = mainJsContent.replace('const activeTileElements =', 'var activeTileElements =');
 
 // Setup Sandbox Context
@@ -139,8 +145,11 @@ vm.createContext(sandbox);
 vm.runInContext(decimalContent, sandbox);
 // 2. Run ViewUtils (depends on Decimal)
 vm.runInContext(viewUtilsContent, sandbox);
-// 3. Run Main (depends on ViewUtils and Decimal)
+// 3. Run UIManager
+vm.runInContext(uiManagerContent, sandbox);
+// 4. Run Main
 vm.runInContext(mainJsContent, sandbox);
+
 
 // Extract internals from sandbox
 const { state, activeTileElements, Decimal } = sandbox;
@@ -185,6 +194,10 @@ state.camera.y = new Decimal(0.5);
 
 // Mock els.layers container to capture children
 const layersChildren = [];
+// Initialize els if it's undefined (since init() wasn't called)
+if (!sandbox.els) {
+    sandbox.els = {};
+}
 sandbox.els.layers = {
     appendChild: (child) => layersChildren.push(child),
     innerHTML: '',

@@ -51,53 +51,5 @@ class TestCameraParity(unittest.TestCase):
             self.assertGreaterEqual(s['globalLevel'], last)
             last = s['globalLevel']
 
-    def test_macro_parity(self):
-        """
-        Macros should resolve to the same camera as explicit tile/offset definitions.
-        """
-        def sample_camera(path):
-            camera_utils.set_camera_path(path)
-            return camera_utils.camera_at_progress(0.0)
-
-        # Global macro vs explicit
-        macro_global_path = {
-            "keyframes": [
-                {"camera": {"macro": "global", "level": 5, "globalX": 0.25, "globalY": 0.75}}
-            ]
-        }
-        explicit_global_path = {
-            "keyframes": [
-                {"camera": {"level": 5, "x": 0.25, "y": 0.75}}
-            ]
-        }
-
-        cam_macro_global = sample_camera(macro_global_path)
-        cam_explicit_global = sample_camera(explicit_global_path)
-
-        self.assertAlmostEqual(cam_macro_global['x'], cam_explicit_global['x'], places=9)
-        self.assertAlmostEqual(cam_macro_global['y'], cam_explicit_global['y'], places=9)
-        self.assertAlmostEqual(cam_macro_global['globalX'], cam_explicit_global['globalX'], places=9)
-        self.assertAlmostEqual(cam_macro_global['globalY'], cam_explicit_global['globalY'], places=9)
-
-        # Mandelbrot macro vs equivalent global position at center (-0.75 + 0i maps to 0.5, 0.5)
-        macro_mb_path = {
-            "keyframes": [
-                {"camera": {"macro": "mandelbrot", "level": 3, "re": -0.75, "im": 0.0}}
-            ]
-        }
-        explicit_mb_path = {
-            "keyframes": [
-                {"camera": {"level": 3, "x": 0.5, "y": 0.5}}
-            ]
-        }
-
-        cam_macro_mb = sample_camera(macro_mb_path)
-        cam_explicit_mb = sample_camera(explicit_mb_path)
-
-        self.assertAlmostEqual(cam_macro_mb['x'], cam_explicit_mb['x'], places=9)
-        self.assertAlmostEqual(cam_macro_mb['y'], cam_explicit_mb['y'], places=9)
-        self.assertAlmostEqual(cam_macro_mb['globalX'], cam_explicit_mb['globalX'], places=9)
-        self.assertAlmostEqual(cam_macro_mb['globalY'], cam_explicit_mb['globalY'], places=9)
-
 if __name__ == '__main__':
     unittest.main()

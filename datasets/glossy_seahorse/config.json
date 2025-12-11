@@ -19,18 +19,18 @@
       "keyframes": [
         { 
           "camera": { 
-            "globalLevel": 1, 
-            "globalX": 0.5, 
-            "globalY": 0.5, 
+            "level": 1, 
+            "x": 0.5, 
+            "y": 0.5, 
             "rotation": 0, 
             "note": "Start: Root View" 
           } 
         },
         { 
           "camera": { 
-            "globalLevel": 110, 
-            "globalX": "0.4800100229869386919472754000009779", 
-            "globalY": "0.4298000009918483159437358000000568", 
+            "level": 110, 
+            "x": "0.4800100229869386919472754000009779", 
+            "y": "0.4298000009918483159437358000000568", 
             "rotation": 31.4,
             "note": "End: Zoom Target" 
           } 

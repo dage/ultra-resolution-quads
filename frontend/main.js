@@ -806,9 +806,7 @@ async function loadDataset(id) {
 }
 
 function setActivePath(path) {
-    const resolved = (typeof CameraPath !== 'undefined' && CameraPath.resolvePathMacros)
-        ? CameraPath.resolvePathMacros(path)
-        : (path || null);
+    const resolved = path || null;
 
     state.activePath = resolved;
     if (ui) ui.updatePathList(state.activePath ? state.activePath.keyframes : []);
