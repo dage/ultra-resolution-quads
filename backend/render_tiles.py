@@ -190,7 +190,8 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
         workers = num_workers if num_workers and num_workers > 0 else 8
         print(f"Rendering {len(tasks)} missing tiles with {workers} workers...")
         
-        pool = multiprocessing.Pool(processes=workers, initializer=_init_renderer_worker, initargs=(renderer,))
+        # maxtasksperchild=10 recycles workers to prevent memory leaks (e.g. from fractalshades/numba)
+        pool = multiprocessing.Pool(processes=workers, initializer=_init_renderer_worker, initargs=(renderer,), maxtasksperchild=10)
         try:
             for idx, (created, duration) in enumerate(pool.imap_unordered(_render_tile, tasks), 1):
                 if created:
