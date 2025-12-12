@@ -43,13 +43,32 @@ def ensure_dirs() -> None:
 
 
 def apply_speed_overrides(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Dial down expensive fractals (e.g., power_tower) for quicker tests."""
-    if params.get("fractal_type") == "power_tower":
-        tuned = params.copy()
-        tuned["nx"] = min(params.get("nx", 800), 400)
-        tuned["max_iter"] = min(params.get("max_iter", 200), 120)
-        return tuned
-    return params
+    """Dial down expensive fractals (ultra-deep perturbation) for quicker tests."""
+    tuned = params.copy()
+    # Universal speed-up: halve resolution for integration runs
+    if "nx" in tuned:
+        try:
+            tuned["nx"] = max(64, int(tuned.get("nx", 800) // 2))
+        except Exception:
+            pass
+
+    precision = tuned.get("precision")
+    dx = tuned.get("dx")
+    is_ultradeep = False
+    if isinstance(precision, (int, float)) and precision >= 500:
+        is_ultradeep = True
+    if isinstance(dx, str) and "e-" in dx.lower():
+        try:
+            exp = int(dx.lower().split("e-")[1].split()[0])
+            if exp >= 500:
+                is_ultradeep = True
+        except Exception:
+            pass
+
+    if is_ultradeep:
+        tuned["nx"] = min(tuned.get("nx", 800), 400)
+        tuned["max_iter"] = min(tuned.get("max_iter", 50000), 20000)
+    return tuned
 
 
 def get_quadrant_params(item_params: Dict[str, Any], quad_key: str) -> Dict[str, Any]:
@@ -314,7 +333,7 @@ def generate_html_report(json_path: str, report_path: str, artifacts_dir: str) -
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fractal Gallery Integrator (Independent Tile Test).")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="OpenRouter model slug.")
-    parser.add_argument("--supersampling", default="2x2", help="Supersampling setting.")
+    parser.add_argument("--supersampling", default="None", help="Supersampling setting.")
     parser.add_argument("--skip-llm", action="store_true", help="Skip LLM.")
     parser.add_argument("--limit", type=int, default=None, help="Limit items.")
     parser.add_argument("--start", type=int, default=0, help="Start index.")
