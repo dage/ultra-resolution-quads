@@ -1,0 +1,30 @@
+{
+  "id": "hybrid_orbit_switch_id3",
+  "name": "Hybrid Orbit Switch (Gallery id 3)",
+  "tile_size": 1024,
+  "renderer": "datasets.hybrid_orbit_switch_id3.render:HybridOrbitSwitchRenderer",
+  "renderer_args": {
+    "supersampling": 2,
+    "seq": "ABBABAAAAA",
+    "mapA": "sin",
+    "mapB": "sinh",
+    "lamA": 1.4851075592198706,
+    "lamB": -1.6116093590081693,
+    "c_re": 0.11859028322078968,
+    "c_im": -0.10515024499795689,
+    "center_re": -0.4949049355354143,
+    "center_im": 0.3710307451429604,
+    "scale": 0.6274177092915492,
+    "max_iter": 188,
+    "bailout": 5.815555913477939
+  },
+  "webp_params": {
+    "lossless": true,
+    "method": 6
+  },
+  "render_config": {
+    "mode": "full",
+    "max_level": 1
+  }
+}
+
