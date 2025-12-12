@@ -431,7 +431,8 @@ def main():
         # Decide rendering strategy
         explicit_tiles = parse_tiles_arg(args.tiles) if args.tiles else []
         num_workers = args.workers if args.workers is not None else 8
-        use_multiprocessing = supports_multithreading and (num_workers != 1)
+        workers_set_by_cli = args.workers is not None
+        use_multiprocessing = (num_workers != 1) if workers_set_by_cli else (supports_multithreading and (num_workers != 1))
 
         if explicit_tiles:
             print(f"Rendering explicit tiles: {explicit_tiles}")
