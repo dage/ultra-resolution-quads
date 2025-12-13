@@ -122,6 +122,18 @@ Use Perplexity Sonar (cheap tier) via OpenRouter to fetch fresh web context for 
     ```
 The script hardcodes `perplexity/sonar` with medium context and prints the answer plus citations to stdout.
 
+## ComfyUI Upscale “Hallucination” Test (Experiment)
+
+Runs a fixed ComfyUI workflow against a default tile from `datasets/` and generates a standalone HTML A/B report:
+
+```bash
+python experiments/comfyui_hallucination_test.py --server 127.0.0.1:8188
+```
+
+This experiment downscales the input by default (`--downscale-input 0.5`) to keep the workflow fast, while still exercising the workflow’s internal 2× upscale. (The ComfyUI desktop app often listens on `127.0.0.1:8000`.)
+
+Outputs are written to `artifacts/comfyui_hallucination_test/` (images, `meta_<seed>.json`, and `report_<seed>.html`). You can regenerate only the HTML from existing artifacts with `--regen-html --seed <seed>`.
+
 ## 📖 Documentation
 
 -   **Fractal Generation:** See [docs/FRACTALSHADES_GUIDE.md](docs/FRACTALSHADES_GUIDE.md).

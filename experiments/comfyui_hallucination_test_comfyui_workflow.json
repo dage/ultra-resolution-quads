@@ -1,0 +1,122 @@
+{
+  "3": {
+    "inputs": {
+      "seed": 82426607225884,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.1,
+      "model": [
+        "13",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "21",
+        0
+      ]
+    },
+    "class_type": "KSampler"
+  },
+  "6": {
+    "inputs": {
+      "text": "Make the image ultrasharp by adding only tiny missing micro-details (1–2 pixels) where it's blurred. Do NOT remove, alter, replace, repaint, or smooth any original details or edges. Do NOT introduce new shapes/structures. Do NOT shift/offset/warp the image. Only add subtle detail that helps the 2x upscaling look perfect.",
+      "clip": [
+        "16",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "7": {
+    "inputs": {
+      "text": "white",
+      "clip": [
+        "16",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "12": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "13": {
+    "inputs": {
+      "unet_name": "z_image_turbo-Q5_K_S.gguf"
+    },
+    "class_type": "UnetLoaderGGUF"
+  },
+  "16": {
+    "inputs": {
+      "clip_name": "Qwen3-4B-Instruct-2507-Q5_K_M.gguf",
+      "type": "stable_diffusion"
+    },
+    "class_type": "CLIPLoaderGGUF"
+  },
+  "17": {
+    "inputs": {
+      "image": "ComfyUI_00125_.png",
+      "upload": "image"
+    },
+    "class_type": "LoadImage"
+  },
+  "18": {
+    "inputs": {
+      "upscale_method": "bicubic",
+      "scale_by": 2,
+      "image": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "ImageScaleBy"
+  },
+  "21": {
+    "inputs": {
+      "pixels": [
+        "18",
+        0
+      ],
+      "vae": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  }
+}

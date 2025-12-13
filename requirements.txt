@@ -6,3 +6,6 @@ uvicorn
 python-multipart
 requests
 aiofiles
+websocket-client
+openai
+python-dotenv
