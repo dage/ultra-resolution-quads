@@ -417,7 +417,7 @@ def main():
         print(f"Generating initial tile manifest for {dataset_id}...")
         generate_tile_manifest(dataset_tiles_root)
 
-        renderer = load_renderer(renderer_path, tile_size, merged_renderer_kwargs)
+        renderer = load_renderer(renderer_path, tile_size, merged_renderer_kwargs, dataset_path=dataset_tiles_root)
 
         print(f"Initializing dataset: {dataset_id}")
         

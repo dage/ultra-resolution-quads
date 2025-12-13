@@ -128,7 +128,8 @@ def get_renderer(dataset_id):
     renderer_kwargs = config.get('renderer_args', {})
     
     logger.info(f"Loading renderer for {dataset_id}: {renderer_path}")
-    renderer = load_renderer(renderer_path, tile_size, renderer_kwargs)
+    dataset_path = os.path.join(DATA_ROOT, 'datasets', dataset_id)
+    renderer = load_renderer(renderer_path, tile_size, renderer_kwargs, dataset_path=dataset_path)
     renderer_cache[dataset_id] = renderer
     return renderer
 
