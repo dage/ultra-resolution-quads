@@ -134,6 +134,22 @@ This experiment downscales the input by default (`--downscale-input 0.5`) to kee
 
 Outputs are written to `artifacts/comfyui_hallucination_test/` (images, `meta_<seed>.json`, and `report_<seed>.html`). You can regenerate only the HTML from existing artifacts with `--regen-html --seed <seed>`.
 
+## ComfyUI Z-Image Turbo Text-to-Image (Experiment)
+
+Generates a 1024x1024 image from a text prompt using `z-image turbo` via ComfyUI, and optionally analyzes the result using an AI vision model.
+
+```bash
+python experiments/z_image_turbo_t2i.py "A futuristic city with flying cars" --server 127.0.0.1:8000 --ai-analyze
+```
+
+**Options:**
+-   `prompt`: The text description of the image to generate.
+-   `--server`: ComfyUI server address (default: `127.0.0.1:8000`).
+-   `--seed`: Random seed (default: 0 for random).
+-   `--ai-analyze`: Analyze the generated image using OpenRouter/Qwen-VL to check prompt adherence.
+
+Outputs are saved to `artifacts/z_image_turbo_t2i/`.
+
 ## 📖 Documentation
 
 -   **Fractal Generation:** See [docs/FRACTALSHADES_GUIDE.md](docs/FRACTALSHADES_GUIDE.md).
