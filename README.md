@@ -1,156 +1,135 @@
 # Ultra-Resolution Quads
 
-**Ultra-Resolution Quads** is a high-performance tiled rendering system designed to support "infinite" zoom capabilities without floating-point precision errors. It relies on a sparse quadtree structure to serve and explore ultra-resolution imagery.
+A precision-safe deep-zoom viewer + pluggable tile renderers (fractals today, text-to-image next).
 
-The project is divided into a core viewer (frontend) and pluggable backend renderers that generate the tile content.
+This repo is a working prototype for a “true infinite zoom” pipeline:
+render tiles on demand, cache them, and navigate to extreme zoom levels without the usual float64 drift.
 
-## 🏗 Architecture
+## Status
 
-### 1. Core Viewer (Frontend)
-The frontend is a vanilla JS web application located in `frontend/`. It handles:
--   **Quadtree Navigation:** Efficiently loads tiles based on zoom level and viewport.
--   **Layer-Stack Camera:** Uses integer coordinates + float offsets to bypass standard floating-point limitations.
--   **Tile Caching & Rendering:** Manages DOM elements or Canvas drawing for smooth panning and zooming.
+- Pre-alpha / research project: the viewer works, datasets/renderers exist, APIs may change quickly.
+- Current renderer focus: fractals (arbitrary precision via `fractalshades`) + a debug grid renderer.
+- In progress: text-to-image / diffusion-based renderers that can generate coherent tiles across scale.
 
-### 2. Pluggable Renderers (Backend)
-The backend generates the static image tiles served to the viewer. The system is designed to support multiple types of renderers.
+## Quickstart (Local)
 
-#### A. Fractal Renderer (Fractalshades)
-A powerful rendering engine based on [Fractalshades](https://gbillotey.github.io/Fractalshades-doc/) for creating mathematical fractals with arbitrary precision.
-
--   **Features:** Deep zooming (perturbation theory), 3D lighting, fieldlines, and diverse fractal types (Mandelbrot, Burning Ship, Power Tower).
--   **Code:** `backend/fractal_renderer.py` (Wrapper), `backend/fractal_renderer_models.py` (Custom Models).
--   **Usage:** See [docs/FRACTALSHADES_GUIDE.md](docs/FRACTALSHADES_GUIDE.md) for details.
-
-#### B. Debug Renderer
-A simple renderer used for testing the quadtree logic. It generates tiles with grid coordinates and debug information.
-
--   **Usage:** `backend/generate_dataset.py --renderer debug`
-
----
-
-## 🌟 Fractal Gallery Showcase
-
-We include a dedicated gallery generation script to demonstrate the capabilities of the Fractal Renderer.
-
-| Type | Description |
-| :--- | :--- |
-| **Mandelbrot** | The classic set, supported with arbitrary precision. |
-| **Burning Ship** | Including variants like **Shark Fin** and **Perpendicular**. |
-| **Power Tower** | Tetration fractals showing map-like structures. |
-| **Visualization** | Supports 3D glossy lighting, Distance Estimation (DEM), and Fieldlines. |
-
-### Generating the Gallery
-Run the following command to generate a set of 10 high-quality example fractals:
-```bash
-python experiments/fractal_gallery.py
-```
-The images will be saved to `artifacts/gallery_v2/`.
-
----
-
-## 🚀 Getting Started
-
-1.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-2.  **Generate a Tiled Dataset:**
-    To use the web viewer, generate a dataset using one of the renderers.
-    
-    *Option A: Debug Grid (Fast)*
-    ```bash
-    python backend/generate_dataset.py --dataset debug_quadtile --renderer debug --max_level 6
-    ```
-    
-    *Option B: Deep Zoom Fractal (Computationally Intensive)*
-    ```bash
-    python backend/generate_dataset.py --dataset power_tower --renderer mandelbrot --max_level 15 --mode path
-    ```
-
-3.  **Start the Viewer:**
-    ```bash
-    python -m http.server 8000
-    ```
-    Open `http://localhost:8000/frontend/index.html` to explore.
-
-## Telemetry & Automation
-The viewer includes features for automated testing and performance profiling.
-
-### URL Parameters
-*   `dataset`: Automatically load a specific dataset ID on startup.
-*   `autoplay`: If `true`, automatically starts the camera path once the initial tiles are loaded.
-    *   *Example:* `http://localhost:8000/frontend/index.html?dataset=glossy_seahorse&autoplay=true`
-
-### Script Injection Hooks
-External scripts (e.g., Playwright/Selenium) can interface with the render loop:
-
-*   `window.appState`: Access the full application state (camera position, config, etc.).
-*   `window.activeTileElements`: Access the Map of currently rendered DOM elements to check load status.
-*   `window.externalLoopHook(state, timestamp)`: Define this function to execute custom logic on every render frame.
-
-### Running Experiments
-We provide a generic Python runner to automate experiments using these hooks.
-
-**Usage:**
-1.  Create a JavaScript file (e.g., `experiments/my_hook.js`) defining `window.externalLoopHook` and pushing data to `window.telemetryData`.
-2.  Run the experiment:
-    ```bash
-    python scripts/run_browser_experiment.py \
-        --dataset <dataset_id> \
-        --hook experiments/my_hook.js \
-        --output artifacts/my_results.json
-    ```
-3.  The runner will launch the browser, inject your hook, autoplay the dataset's path, and save the collected `window.telemetryData` to the JSON output file.
-4.  If your hook needs to flush a final summary after playback, expose an optional `window.emitTextContentTelemetryNow()` (or similar) and the runner will call it before reading `telemetryData`.
-
-## 🔍 Quick Perplexity Search (CLI)
-
-Use Perplexity Sonar (cheap tier) via OpenRouter to fetch fresh web context for agents—no UI required.
-
-1.  Ensure `OPENROUTER_API_KEY` is available (the script auto-loads the repo `.env`; existing env vars override file values).
-2.  Run a search with a prompt (multiline via standard shell quoting/heredoc):
-    ```bash
-    python scripts/perplexity_search.py "latest research on ultra-high-res tile streaming"
-    # or
-    python scripts/perplexity_search.py "$(cat <<'EOF'
-    Summarize camera interpolation methods for quadtree renderers.
-    Focus on papers newer than 2022.
-    EOF
-    )"
-    ```
-The script hardcodes `perplexity/sonar` with medium context and prints the answer plus citations to stdout.
-
-## ComfyUI Upscale “Hallucination” Test (Experiment)
-
-Runs a fixed ComfyUI workflow against a default tile from `datasets/` and generates a standalone HTML A/B report:
+Prereqs: Python 3.11+ and Node.js. We require both since we try to avoid duplicating logic across front-end and back-end by having a shared JS code folder.
 
 ```bash
-python experiments/comfyui_hallucination_test.py --server 127.0.0.1:8188
+pip install -r requirements.txt
+./start.sh
 ```
 
-This experiment downscales the input by default (`--downscale-input 0.5`) to keep the workflow fast, while still exercising the workflow’s internal 2× upscale. (The ComfyUI desktop app often listens on `127.0.0.1:8000`.)
+Open `http://localhost:8001/` (redirects to `frontend/index.html`).
 
-Outputs are written to `artifacts/comfyui_hallucination_test/` (images, `meta_<seed>.json`, and `report_<seed>.html`). You can regenerate only the HTML from existing artifacts with `--regen-html --seed <seed>`.
+Fastest “it works” dataset:
+```bash
+python backend/render_tiles.py --dataset debug_quadtile
+```
 
-## ComfyUI Z-Image Turbo Text-to-Image (Experiment)
+Then select `Debug Quadtile` in the UI.
 
-Generates a 1024x1024 image from a text prompt using `z-image turbo` via ComfyUI, and optionally analyzes the result using an AI vision model.
+Optional extras:
+- Fractal datasets: `pip install fractalshades numba`
+- Browser automation: `pip install playwright && playwright install chromium`
+
+## How It Works
+
+**Frontend (`frontend/`)**
+- Vanilla JS viewer (no build step).
+- Precision-safe camera math using `Decimal.js` + integer tile coordinates.
+- Sparse quadtree tile selection + prioritized request queue.
+- Optional “Live Render” mode that asks the backend to render missing tiles on demand.
+
+**Backend (`backend/`)**
+- `backend/live_server.py`: FastAPI server that renders a missing tile, writes it to disk, and returns it.
+  - Endpoint: `GET /live/<dataset>/<level>/<x>/<y>.webp`
+  - Health/progress: `GET /status`
+- `backend/render_tiles.py`: offline/batch tile generator (full pyramid, path-driven, or explicit tile list).
+- `backend/renderer_utils.py`: dynamic renderer loading + `tiles.json` manifest generation.
+
+**Dataset format (`datasets/<id>/`)**
+- `config.json`: dataset metadata + renderer wiring.
+- `render.py`: the renderer class referenced by `config.json`.
+- Rendered tiles (generated locally, gitignored): `datasets/<id>/<level>/<x>/<y>.webp`
+- Optional manifest (generated locally, gitignored): `datasets/<id>/tiles.json`
+
+## Rendering Tiles
+
+**Batch render (recommended for reproducible demos)**
+```bash
+python backend/render_tiles.py --dataset debug_quadtile --mode full --max_level 5
+python backend/render_tiles.py --dataset glossy_seahorse --mode path
+python backend/render_tiles.py --dataset multibrot_p4 --tiles "0/0/0,1/0/0,1/1/0"
+```
+
+Notes:
+- `--mode full` generates the full pyramid up to `--max_level`.
+- `--mode path` generates tiles needed along the dataset’s camera path (`render_config.path`).
+- Worker defaults come from each dataset’s `supports_multithreading` flag; override with `--workers`.
+
+**Live render (great for exploration)**
+- Start the repo with `./start.sh`
+- Toggle “Live Render” in the UI
+- Pan/zoom; missing tiles are rendered and cached to `datasets/<id>/...`
+
+## Adding a New Renderer / Dataset
+
+1. Create `datasets/<new_id>/render.py` with a renderer class:
+   - Constructor takes `tile_size` (or reads it from kwargs).
+   - Implements `render(level, x, y) -> PIL.Image.Image`.
+2. Create `datasets/<new_id>/config.json`:
+   - `renderer`: import path like `datasets.<new_id>.render:MyRenderer`
+   - `tile_size`: 256/512/1024/…
+   - Optional `renderer_args`, `render_config`, and `supports_multithreading`.
+3. Add it to `datasets/index.json` so it appears in the UI.
+
+## Text-to-Image Direction (WIP)
+
+There isn’t a production T2I tile renderer wired into `datasets/` yet, but the repo already contains:
+- A robust ComfyUI API client: `backend/comfyui_client.py`
+- Workflow runner CLI: `backend/tools/run_comfyui_workflow.py`
+- Experiments for text-to-image and “hallucination”/upscale analysis:
+  - `experiments/z_image_turbo_t2i.py`
+  - `experiments/comfyui_hallucination_test.py`
+
+The intended next step is a dataset renderer that calls a model (local or ComfyUI) with coordinate- and scale-aware conditioning, so tiles remain coherent across:
+adjacent tiles, parent/child tiles, and camera motion.
+
+## Experiments & Tooling (Optional)
+
+**Browser automation + telemetry**
+- `scripts/run_browser_experiment.py` (Playwright) can inject `window.externalLoopHook` and record `window.telemetryData`.
+- The viewer supports URL params like `?dataset=<id>&autoplay=true`.
+
+**OpenRouter utilities**
+- `scripts/perplexity_search.py` uses OpenRouter + Perplexity Sonar (needs `OPENROUTER_API_KEY`).
+- `backend/tools/analyze_image.py` can run vision-model analysis for experiment outputs.
+
+Environment variables live in `.env` (see `.env_template`).
+
+## Tests
 
 ```bash
-python experiments/z_image_turbo_t2i.py "A futuristic city with flying cars" --server 127.0.0.1:8000 --ai-analyze
+bash tests/run_all_tests.sh
 ```
 
-**Options:**
--   `prompt`: The text description of the image to generate.
--   `--server`: ComfyUI server address (default: `127.0.0.1:8000`).
--   `--seed`: Random seed (default: 0 for random).
--   `--ai-analyze`: Analyze the generated image using OpenRouter/Qwen-VL to check prompt adherence.
+This runs:
+- Python parity tests for camera/path logic
+- Node-based smoke tests for frontend math and view logic
+- A path/tiles audit script
 
-Outputs are saved to `artifacts/z_image_turbo_t2i/`.
+## Contributing
 
-## 📖 Documentation
+Contributions are welcome. 
 
--   **Fractal Generation:** See [docs/FRACTALSHADES_GUIDE.md](docs/FRACTALSHADES_GUIDE.md).
--   **Project Internals:** See `PRD.md` (if available) for architectural decisions.
+## Credits
+
+- `fractalshades` for deep-zoom fractal math and rendering
+- FastAPI/Uvicorn for the live tile server
+- ComfyUI for AI based image generation and editing
+- Decimal.js for precision-safe camera math to reach very deep zoom levels
+
+## License
+
+No license is included yet. If you want to contribute or reuse this code, please open an issue so we can pick an appropriate license.
