@@ -7,7 +7,9 @@ import shutil
 import sys
 import time
 import multiprocessing
-from typing import Any, Dict
+import resource
+import gc
+from typing import Any, Dict, Optional, Tuple
 
 from PIL import Image
 
@@ -121,6 +123,24 @@ def _init_renderer_worker(renderer):
         # os.nice is not available on all operating systems (e.g., Windows)
         pass
 
+def _init_renderer_worker_from_config(renderer_path, tile_size, renderer_kwargs, dataset_path):
+    """
+    Initializer that instantiates the renderer from config in the worker process.
+    This avoids pickling large renderer instances and ensures a fresh state.
+    """
+    global _renderer_instance
+    try:
+        os.nice(10)
+    except AttributeError:
+        pass
+    
+    # Import locally to ensure availability
+    from backend.renderer_utils import load_renderer
+    try:
+        _renderer_instance = load_renderer(renderer_path, tile_size, renderer_kwargs, dataset_path)
+    except Exception as e:
+        print(f"Error initializing renderer in worker: {e}", file=sys.stderr)
+        raise
 
 def _render_tile(args):
     t0 = time.time()
@@ -139,8 +159,19 @@ def _render_tile(args):
     img.save(img_path, format=TILE_FORMAT, **TILE_WEBP_PARAMS)
     return True, time.time() - t0
 
-def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, num_workers=8):
-    """Render a list of (level, x, y, base_path) tasks, skipping those already present."""
+def render_tasks(renderer_instance, tasks, dataset_dir=None, num_workers=8, renderer_config=None):
+    """
+    Render a list of (level, x, y, base_path) tasks.
+    
+    Args:
+        renderer_instance: The instantiated renderer object (used for main-process debug mode or pickling fallback).
+        tasks: List of task tuples.
+        dataset_dir: Path to dataset root (for updating manifest).
+        num_workers: Number of workers. 
+                     If > 0: Uses multiprocessing.Pool (even for 1).
+                     If 0: Runs in main process (for debugging).
+        renderer_config: Tuple (path, tile_size, kwargs, dataset_path) to instantiate renderer in workers.
+    """
     if not tasks:
         print("No new tiles needed.")
         return 0
@@ -150,14 +181,16 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
     batch_duration = 0.0
     batch_count = 0
     
-    # Fallback check if method exists on renderer (legacy)
-    if use_multiprocessing and hasattr(renderer, 'supports_multithreading') and not renderer.supports_multithreading():
-        use_multiprocessing = False
-        print("Renderer does not support multithreading. Switching to single-process mode.")
+    # Determine mode
+    run_in_pool = True
+    if num_workers == 0:
+        run_in_pool = False
+        print("Workers set to 0: Switching to IN-PROCESS execution (Debug Mode).")
     
-    # Explicit config override message
-    if not use_multiprocessing and hasattr(renderer, 'supports_multithreading') and renderer.supports_multithreading():
-         print("Multithreading disabled by configuration.")
+    # Check regarding renderer support (legacy check)
+    if run_in_pool and hasattr(renderer_instance, 'supports_multithreading') and not renderer_instance.supports_multithreading() and num_workers > 1:
+        print(f"Renderer requests single-threading. Forcing workers=1 (still using Pool for memory safety).")
+        num_workers = 1
 
     def _process_progress(idx, total):
         nonlocal last_update_time, batch_count, batch_duration
@@ -166,19 +199,16 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
         
         if wall_elapsed > 60:
             # Calculate effective speed (wall clock time)
-            # This handles parallelism correctly (e.g., 8 tiles in 10s -> 0.8 tiles/s avg, or 1.25s/tile)
             avg_wall_per_tile = wall_elapsed / batch_count if batch_count > 0 else 0.0
-            
-            # CPU time average (just for info, if needed, or we can drop it)
-            # avg_cpu_per_tile = batch_duration / batch_count if batch_count > 0 else 0.0
             
             remaining = total - idx
             eta_seconds = remaining * avg_wall_per_tile
             eta_str = format_time(eta_seconds)
             
-            print(f"Rendering {idx}/{total}... Avg (wall): {avg_wall_per_tile:.2f}s/tile... ETA: {eta_str}", flush=True)
+            # Simple progress output without memory or verbose stats
+            print(f"Rendering {idx}/{total}. {avg_wall_per_tile:.2f}s/tile. ETA: {eta_str}", flush=True)
             
-            # Periodically update the manifest so the frontend can see progress live
+            # Periodically update the manifest
             if dataset_dir:
                 generate_tile_manifest(dataset_dir)
             
@@ -186,12 +216,29 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
             batch_count = 0
             batch_duration = 0.0
 
-    if use_multiprocessing:
-        workers = num_workers if num_workers and num_workers > 0 else 8
-        print(f"Rendering {len(tasks)} missing tiles with {workers} workers...")
+    if run_in_pool:
+        # Ensure we have at least 1 worker if we are in pool mode
+        pool_size = max(1, num_workers)
+        print(f"Rendering {len(tasks)} missing tiles with {pool_size} workers (Process Pool)...")
         
-        # maxtasksperchild=10 recycles workers to prevent memory leaks (e.g. from fractalshades/numba)
-        pool = multiprocessing.Pool(processes=workers, initializer=_init_renderer_worker, initargs=(renderer,), maxtasksperchild=10)
+        if renderer_config:
+            # Preferred: Instantiate fresh renderer in worker
+            pool = multiprocessing.Pool(
+                processes=pool_size, 
+                initializer=_init_renderer_worker_from_config, 
+                initargs=renderer_config, 
+                maxtasksperchild=50
+            )
+        else:
+            # Fallback: Pickle the existing instance
+            print("Warning: renderer_config not provided, pickling renderer instance (less robust).")
+            pool = multiprocessing.Pool(
+                processes=pool_size, 
+                initializer=_init_renderer_worker, 
+                initargs=(renderer_instance,),
+                maxtasksperchild=50
+            )
+
         try:
             for idx, (created, duration) in enumerate(pool.imap_unordered(_render_tile, tasks), 1):
                 if created:
@@ -211,19 +258,23 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
             sys.exit(1)
 
         except Exception as e:
-            print(f"Parallel rendering failed ({e}); falling back to single-process mode...")
+            print(f"Pool rendering failed ({e}); terminating...")
             pool.terminate()
             pool.join()
-            use_multiprocessing = False
+            raise e
 
-    if not use_multiprocessing:
-        print(f"Rendering {len(tasks)} tiles in single process...")
-        _init_renderer_worker(renderer)
+    else:
+        # Main Process Loop (Debug Mode)
+        print(f"Rendering {len(tasks)} tiles in MAIN process...")
+        _init_renderer_worker(renderer_instance)
         for idx, task in enumerate(tasks, 1):
             created, duration = _render_tile(task)
             if created:
                 generated += 1
             
+            # Explicit GC
+            gc.collect()
+
             batch_duration += duration
             batch_count += 1
             _process_progress(idx, len(tasks))
@@ -231,8 +282,7 @@ def render_tasks(renderer, tasks, dataset_dir=None, use_multiprocessing=True, nu
     print(f"Rendering complete. Generated {generated} tiles.")
     return generated
 
-
-def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=True, num_workers=8):
+def generate_full_pyramid(renderer_instance, base_path, max_level, num_workers=8, renderer_config=None):
     tasks = []
     total_tiles = 0
     for level in range(max_level + 1):
@@ -252,11 +302,15 @@ def generate_full_pyramid(renderer, base_path, max_level, use_multiprocessing=Tr
         print(f"Full mode: {len(tasks)} / {total_tiles} tiles missing; rendering now...")
     else:
         print("Full mode: all tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks, dataset_dir=base_path, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+    
+    generated = render_tasks(
+        renderer_instance, tasks, dataset_dir=base_path, 
+        num_workers=num_workers,
+        renderer_config=renderer_config
+    )
     return generated, total_tiles, len(tasks)
 
-
-def generate_selected_tiles(renderer, base_path, tiles, use_multiprocessing=True, num_workers=8):
+def generate_selected_tiles(renderer_instance, base_path, tiles, num_workers=8, renderer_config=None):
     """
     Render only the explicitly provided tiles (list of (level, x, y)).
     """
@@ -273,10 +327,15 @@ def generate_selected_tiles(renderer, base_path, tiles, use_multiprocessing=True
         print(f"Selected tiles: {len(tasks)} / {len(tiles)} missing; rendering now...")
     else:
         print("Selected tiles: all requested tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks, dataset_dir=base_path, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+    
+    generated = render_tasks(
+        renderer_instance, tasks, dataset_dir=base_path, 
+        num_workers=num_workers,
+        renderer_config=renderer_config
+    )
     return generated, len(tiles), len(tasks)
 
-def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=None, use_multiprocessing=True, num_workers=8, viewport_width=1920, viewport_height=1080):
+def generate_tiles_along_path(renderer_instance, base_path, dataset_id, path, steps=None, num_workers=8, viewport_width=1920, viewport_height=1080, renderer_config=None):
     if not path:
         print(f"No path defined for {dataset_id}; skipping path-based generation.")
         return 0
@@ -303,16 +362,12 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=None,
     required_tiles = set()  # (level, x, y)
 
     progresses = [s / steps for s in range(steps + 1)]
-    # Note: tile_size here refers to the LOGICAL size used for visibility calculations (usually 512 in frontend).
-    # The physical tile_size from config is used by the renderer.
-    # If we passed the smaller physical size (e.g. 256), the visibility logic would request MORE tiles.
     
-    # NOTE: We use parallel camera sampling because calculating visible tiles for 2000 frames 
-    # with high-precision Decimal math in Node.js is slow (can take 10+ mins).
-    # We use the same number of workers as for rendering.
+    # NOTE: We use parallel camera sampling.
+    cams_workers = num_workers if num_workers > 0 else 1
     cams, tiles = camera_utils.cameras_at_progresses_parallel(
         progresses, path, viewport_width, viewport_height, 512, 
-        num_workers=num_workers
+        num_workers=cams_workers
     )
     
     # Add the tiles identified by the shared logic
@@ -332,7 +387,12 @@ def generate_tiles_along_path(renderer, base_path, dataset_id, path, steps=None,
         print(f"Path mode: {len(tasks)} new tiles to render (of {len(required_tiles)} unique).")
     else:
         print("Path mode: all required tiles already present; nothing to do.")
-    generated = render_tasks(renderer, tasks, dataset_dir=base_path, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+    
+    generated = render_tasks(
+        renderer_instance, tasks, dataset_dir=base_path, 
+        num_workers=num_workers,
+        renderer_config=renderer_config
+    )
     return generated
 
 
@@ -344,7 +404,7 @@ def main():
     parser.add_argument('--mode', choices=['full', 'path'], default=None, help='Generation mode (defaults to config or "path")')
     parser.add_argument('--rebuild', action='store_true', help='Delete existing tiles for the dataset(s) before rendering')
     parser.add_argument('--tiles', default=None, help="Optional comma-separated list of tiles to render, formatted as level/x/y (e.g., '0/0/0,1/0/1'). When provided, overrides mode/max_level and renders only these tiles.")
-    parser.add_argument('--workers', type=int, default=None, help="Optional number of workers for multiprocessing (>=2). Use 1 to force single-process.")
+    parser.add_argument('--workers', type=int, default=None, help="Optional number of workers. 0=MainProcess(Debug), 1=Pool(Safe), >1=Pool(Parallel).")
     parser.add_argument('--viewport_width', type=int, default=1920, help='Viewport width for path visibility calculation (default 1920)')
     parser.add_argument('--viewport_height', type=int, default=1080, help='Viewport height for path visibility calculation (default 1080)')
     
@@ -417,7 +477,12 @@ def main():
         print(f"Generating initial tile manifest for {dataset_id}...")
         generate_tile_manifest(dataset_tiles_root)
 
+        # Instantiate renderer in main process for checks/fallback
         renderer = load_renderer(renderer_path, tile_size, merged_renderer_kwargs, dataset_path=dataset_tiles_root)
+        
+        # Prepare renderer config for workers (to avoid pickling the instance)
+        # Structure: (renderer_path_str, tile_size_int, kwargs_dict, dataset_path_str)
+        renderer_config_tuple = (renderer_path, tile_size, merged_renderer_kwargs, dataset_tiles_root)
 
         print(f"Initializing dataset: {dataset_id}")
         
@@ -426,26 +491,41 @@ def main():
             path_data = render_config.get('path')
             if not path_data:
                 print(f"Warning: Dataset '{dataset_id}' is in 'path' mode but no 'path' object found in render_config.")
-                # We continue, generated might be 0 if path is empty
 
         # Decide rendering strategy
         explicit_tiles = parse_tiles_arg(args.tiles) if args.tiles else []
-        num_workers = args.workers if args.workers is not None else 8
-        workers_set_by_cli = args.workers is not None
-        use_multiprocessing = (num_workers != 1) if workers_set_by_cli else (supports_multithreading and (num_workers != 1))
+        
+        # Worker logic:
+        # CLI overrides everything.
+        # If CLI is None:
+        #   If supports_multithreading -> 8
+        #   If NOT supports_multithreading -> 1 (Safe Pool mode)
+        if args.workers is not None:
+            num_workers = args.workers
+        else:
+            if supports_multithreading:
+                num_workers = 8
+            else:
+                num_workers = 1
 
         if explicit_tiles:
             print(f"Rendering explicit tiles: {explicit_tiles}")
             start_time = time.time()
             generated, total_tiles, missing = generate_selected_tiles(
-                renderer, dataset_tiles_root, explicit_tiles, use_multiprocessing=use_multiprocessing, num_workers=num_workers
+                renderer, dataset_tiles_root, explicit_tiles, 
+                num_workers=num_workers,
+                renderer_config=renderer_config_tuple
             )
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
         elif mode == 'full':
             print(f"Mode: full | max_level={max_level}")
             start_time = time.time()
-            generated, total_tiles, missing = generate_full_pyramid(renderer, dataset_tiles_root, max_level, use_multiprocessing=use_multiprocessing, num_workers=num_workers)
+            generated, total_tiles, missing = generate_full_pyramid(
+                renderer, dataset_tiles_root, max_level, 
+                num_workers=num_workers,
+                renderer_config=renderer_config_tuple
+            )
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
         else:
@@ -453,8 +533,9 @@ def main():
             start_time = time.time()
             generated = generate_tiles_along_path(
                 renderer, dataset_tiles_root, dataset_id, path_data, 
-                use_multiprocessing=use_multiprocessing, num_workers=num_workers,
-                viewport_width=args.viewport_width, viewport_height=args.viewport_height
+                num_workers=num_workers,
+                viewport_width=args.viewport_width, viewport_height=args.viewport_height,
+                renderer_config=renderer_config_tuple
             )
             elapsed = time.time() - start_time
             avg = elapsed / generated if generated else 0.0
