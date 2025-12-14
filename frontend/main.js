@@ -198,6 +198,7 @@ class RequestManager {
                 state.availableTiles.add(manifestKey);
                 addParsedTile(req.level, req.x, req.y);
             }
+            optimizeParsedTiles();
         }
 
         if (req) {
@@ -457,25 +458,142 @@ const state = {
     },
     // Tile Manifest
     availableTiles: new Set(),
-    parsedTiles: new Map(),
+    parsedTiles: [], // CHANGED from Map to Array for optimization logic
     // Backend status for live render health indicator
     backendStatus: null
 };
 
 function addParsedTile(level, x, y) {
-    if (!(state.parsedTiles instanceof Map)) {
-        state.parsedTiles = new Map();
+    // Stores tiles in a flat array for optimization
+    if (!Array.isArray(state.parsedTiles)) {
+        state.parsedTiles = [];
     }
-    const levelKey = Number(level);
-    if (!state.parsedTiles.has(levelKey)) {
-        state.parsedTiles.set(levelKey, []);
-    }
-    const tiles = state.parsedTiles.get(levelKey);
-    tiles.push({
-        level: levelKey,
+    state.parsedTiles.push({
+        level: Number(level),
         x: x instanceof Decimal ? x : new Decimal(x),
-        y: y instanceof Decimal ? y : new Decimal(y)
+        y: y instanceof Decimal ? y : new Decimal(y),
+        w: 1, // Default width
+        h: 1  // Default height
     });
+}
+
+/**
+ * Combines adjacent, identically-sized tiles (quads) into larger, merged tiles
+ * to reduce the total number of tiles that need to be drawn.
+ * * It performs repeated vertical and then horizontal merge passes until no more merges are possible.
+ * This ensures optimal consolidation of the tiles based on the available set.
+ * * Assumes a global object 'state' with a property 'parsedTiles', which is an array of
+ * { level: number, x: Decimal, y: Decimal, w: number, h: number } objects.
+ */
+function optimizeParsedTiles() {
+    let currentTiles = state.parsedTiles;
+    
+    if (!Array.isArray(currentTiles) || currentTiles.length === 0) {
+        return;
+    }
+
+    // Loop until a full pass (vertical and horizontal) results in no changes
+    let changed = true;
+    while (changed) {
+        changed = false;
+        
+        // --- PASS 1: VERTICAL MERGE (Column-major order: level, x, y) ---
+        // This sorting aligns with the request to prioritize growing vertically (column basis).
+        currentTiles.sort((a, b) => {
+            if (a.level !== b.level) return a.level - b.level;
+            // Use Decimal comparison for X
+            if (!a.x.equals(b.x)) return a.x.minus(b.x).toNumber();
+            // Use Decimal comparison for Y
+            return a.y.minus(b.y).toNumber();
+        });
+
+        let newTilesV = [];
+        let i = 0;
+        while (i < currentTiles.length) {
+            let T1 = currentTiles[i];
+            let k = i + 1; // Start checking from the tile immediately following T1
+
+            // Greedily merge all tiles below T1 in the same column
+            while (k < currentTiles.length) {
+                let T2 = currentTiles[k];
+
+                // Merge condition: 
+                // 1. Same level
+                // 2. Same X (T1.x === T2.x)
+                // 3. T2 starts immediately below T1 (T1.y + T1.h === T2.y)
+                // 4. Same width (T1.w === T2.w)
+                if (T1.level === T2.level && 
+                    T1.x.equals(T2.x) && 
+                    T1.y.plus(T1.h).equals(T2.y) && 
+                    T1.w === T2.w) {
+                    
+                    T1.h += T2.h; // Merge T2 into T1 by extending T1's height
+                    changed = true;
+                    k++;
+                } else if (T1.level === T2.level && T1.x.equals(T2.x)) {
+                    // Same column, but not adjacent or different width. Stop vertical merge for this column chain.
+                    break;
+                } else {
+                    // Different level or column. Stop.
+                    break;
+                }
+            }
+            
+            newTilesV.push(T1);
+            i = k; // Skip all tiles that were merged (up to k-1)
+        }
+        currentTiles = newTilesV;
+
+
+        // --- PASS 2: HORIZONTAL MERGE (Row-major order: level, y, x) ---
+        currentTiles.sort((a, b) => {
+            if (a.level !== b.level) return a.level - b.level;
+            // Use Decimal comparison for Y
+            if (!a.y.equals(b.y)) return a.y.minus(b.y).toNumber();
+            // Use Decimal comparison for X
+            return a.x.minus(b.x).toNumber();
+        });
+
+        let newTilesH = [];
+        i = 0;
+        while (i < currentTiles.length) {
+            let T1 = currentTiles[i];
+            let k = i + 1;
+
+            // Greedily merge all tiles to the right of T1 in the same row
+            while (k < currentTiles.length) {
+                let T2 = currentTiles[k];
+
+                // Merge condition: 
+                // 1. Same level
+                // 2. Same Y (T1.y === T2.y)
+                // 3. T2 starts immediately right of T1 (T1.x + T1.w === T2.x)
+                // 4. Same height (T1.h === T2.h)
+                if (T1.level === T2.level && 
+                    T1.y.equals(T2.y) && 
+                    T1.x.plus(T1.w).equals(T2.x) && 
+                    T1.h === T2.h) {
+                    
+                    T1.w += T2.w; // Merge T2 into T1 by extending T1's width
+                    changed = true;
+                    k++;
+                } else if (T1.level === T2.level && T1.y.equals(T2.y)) {
+                    // Same row, but not adjacent or different height. Stop horizontal merge for this row chain.
+                    break;
+                } else {
+                    // Different level or row. Stop.
+                    break;
+                }
+            }
+            
+            newTilesH.push(T1);
+            i = k; // Skip all tiles that were merged (up to k-1)
+        }
+        currentTiles = newTilesH;
+    }
+    
+    // Update the global state with the optimized list
+    state.parsedTiles = currentTiles;
 }
 
 let queueStatusInterval = null;
@@ -804,7 +922,7 @@ async function loadDataset(id) {
 
     // Load Tile Manifest (to avoid 404s)
     state.availableTiles.clear();
-    state.parsedTiles = new Map(); // Reset parsed tiles grouped by level
+    state.parsedTiles = []; // Reset parsed tiles
     try {
         const respTiles = await fetch(`${BASE_DATA_URI}/datasets/${id}/tiles.json?t=${Date.now()}`);
         if (respTiles.ok) {
@@ -813,13 +931,14 @@ async function loadDataset(id) {
             state.availableTiles = new Set(tilesList);
             console.log(`Loaded manifest: ${state.availableTiles.size} tiles available.`);
             
-            // Pre-parse for debug rendering grouped by level
-            state.parsedTiles = new Map();
+            // Pre-parse for debug rendering
+            state.parsedTiles = [];
             for (const str of tilesList) {
                 const parts = str.split('/');
                 const level = parseInt(parts[0], 10);
                 addParsedTile(level, parts[1], parts[2]);
             }
+            optimizeParsedTiles();
         } else {
             console.warn("No tiles.json found; tile checking disabled (assumes all exist).");
         }
@@ -1368,7 +1487,7 @@ function updateQueueBadgeOrientation(rotationRad) {
 }
 
 function drawDebugTiles(ctx, camera, viewSize) {
-    if (!ctx || !(state.parsedTiles instanceof Map)) return;
+    if (!ctx || !Array.isArray(state.parsedTiles)) return;
 
     const width = viewSize.width;
     const height = viewSize.height;
@@ -1385,7 +1504,14 @@ function drawDebugTiles(ctx, camera, viewSize) {
     const fillColor = '#00FF00';
     const levelAlpha = 0.18; // Keep tint visible without washing out when multiple levels overlap
 
-    for (const [level, tiles] of state.parsedTiles.entries()) {
+    // Group tiles by level
+    const tilesByLevel = new Map();
+    for (const t of state.parsedTiles) {
+        if (!tilesByLevel.has(t.level)) tilesByLevel.set(t.level, []);
+        tilesByLevel.get(t.level).push(t);
+    }
+
+    for (const [level, tiles] of tilesByLevel.entries()) {
         if (level < 2) continue; // Skip levels 0 and 1
         if (level < baseLevel) continue; // Skip coarser levels above the camera
         if (!tiles || tiles.length === 0) continue;
@@ -1404,8 +1530,12 @@ function drawDebugTiles(ctx, camera, viewSize) {
             const dY = tile.y.minus(camY_at_Level).toNumber();
             const x = centerX + dX * sizeOnScreen;
             const y = centerY + dY * sizeOnScreen;
+            
+            // tile.w/h are in tile units (usually 1, but >1 if merged)
+            const wScreen = tile.w * sizeOnScreen;
+            const hScreen = tile.h * sizeOnScreen;
 
-            levelPath.rect(x, y, sizeOnScreen, sizeOnScreen);
+            levelPath.rect(x, y, wScreen, hScreen);
         }
 
         ctx.globalCompositeOperation = 'source-over';
