@@ -2,6 +2,7 @@
 datasets/*/*/
 !datasets/*/*.json
 !datasets/*/render.py
+!datasets/*/*.md
 
 # General ignores
 **/__pycache__/

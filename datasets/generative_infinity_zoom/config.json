@@ -1,0 +1,26 @@
+{
+  "id": "generative_infinity_zoom",
+  "name": "Generative Infinity Zoom",
+  "description": "Recursive ComfyUI zoom: T2I Root -> Img2Img Upscale Children.",
+  "tile_size": 1024,
+  "renderer": "datasets.generative_infinity_zoom.render:GenerativeInfiniteZoomRenderer",
+  "renderer_args": {
+    "comfy_server": "127.0.0.1:8000",
+    "prompt_t2i": "organic biological texture, intricate veins, microscopic, 8k, sharp focus",
+    "prompt_img2img": "Make the image ultrasharp by adding only tiny missing micro-details. Do NOT remove, alter, or warp edges. High fidelity, 8k.",
+    "denoise": 0.1
+  },
+  "supports_multithreading": false,
+  "render_config": {
+    "mode": "path",
+    "max_level": 5,
+    "path": {
+      "id": "gen_zoom_path",
+      "name": "Generative Dive",
+      "keyframes": [
+        { "camera": { "level": 0, "x": 0.5, "y": 0.5, "rotation": 0 } },
+        { "camera": { "level": 5, "x": 0.5, "y": 0.5, "rotation": 0 } }
+      ]
+    }
+  }
+}

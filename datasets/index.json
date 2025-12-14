@@ -49,6 +49,11 @@
       "id": "hybrid_orbit_switch_id3",
       "name": "Hybrid Orbit Switch",
       "description": "Non-canonical switched transcendental map (sin/sinh)."
+    },
+    {
+      "id": "generative_infinity_zoom",
+      "name": "Generative Infinity Zoom",
+      "description": "Recursive ComfyUI zoom: T2I Root -> Img2Img Upscale Children."
     }
   ]
 }
