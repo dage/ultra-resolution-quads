@@ -4,7 +4,7 @@ import os
 import json
 import sys
 import tempfile
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Add project root to path to find constants
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -26,60 +26,131 @@ def calculate_max_iter(level, base=2000, increment=200):
     """
     return base + (int(level) * increment)
 
+def _tile_path(dataset_path: str, level: int, x: int, y: int) -> str:
+    return os.path.join(dataset_path, str(level), str(x), f"{y}{TILE_EXTENSION}")
+
+
+def _atomic_save_image(img, dst_path: str) -> None:
+    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(dst_path), suffix=TILE_EXTENSION)
+    os.close(fd)
+    try:
+        img.save(tmp_path, format=TILE_FORMAT, **TILE_WEBP_PARAMS)
+        try:
+            os.replace(tmp_path, dst_path)
+        except OSError:
+            # If another worker beat us to it (or the target is temporarily locked),
+            # prefer keeping the existing file rather than failing the whole render.
+            if not os.path.exists(dst_path):
+                raise
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+
 class RecursiveParentRendererWrapper:
-    def __init__(self, real_renderer, dataset_path):
+    """
+    Dependency-aware wrapper for tile renderers.
+
+    Default behavior matches the previous implementation: ensure the direct parent exists
+    (level-1, x//2, y//2) before rendering (level, x, y).
+
+    Optional renderer hook for generalization:
+      - required_tiles(level, x, y) -> list[(dep_level, dep_x, dep_y)]
+        (alias: get_required_tiles)
+
+    Contract (to keep recursion safe):
+      - dependencies must be for strictly lower levels: dep_level < level
+    """
+
+    def __init__(self, real_renderer, dataset_path: str):
         self.real_renderer = real_renderer
         self.dataset_path = dataset_path
 
     def __getattr__(self, name):
         return getattr(self.real_renderer, name)
 
+    def _default_required_tiles(self, level: int, x: int, y: int) -> List[Tuple[int, int, int]]:
+        if level <= 0:
+            return []
+        return [(level - 1, x // 2, y // 2)]
+
+    def _validate_tile_coords(self, level: int, x: int, y: int) -> None:
+        if level < 0:
+            raise ValueError(f"Invalid required tile level: {level}")
+        if x < 0 or y < 0:
+            raise ValueError(f"Invalid required tile coords: level={level} x={x} y={y}")
+        limit = (1 << int(level)) - 1
+        if x > limit or y > limit:
+            raise ValueError(f"Invalid required tile coords: level={level} x={x} y={y} (limit={limit})")
+
+    def _required_tiles(self, level: int, x: int, y: int) -> List[Tuple[int, int, int]]:
+        fn = getattr(self.real_renderer, "required_tiles", None)
+        if not callable(fn):
+            fn = getattr(self.real_renderer, "get_required_tiles", None)
+
+        if not callable(fn):
+            return self._default_required_tiles(level, x, y)
+
+        raw = fn(int(level), int(x), int(y)) or []
+        out: List[Tuple[int, int, int]] = []
+        seen: Set[Tuple[int, int, int]] = set()
+        for dep_level, dep_x, dep_y in raw:
+            dl = int(dep_level)
+            dx = int(dep_x)
+            dy = int(dep_y)
+            if dl >= int(level):
+                raise ValueError(
+                    f"{self.real_renderer.__class__.__name__}.required_tiles returned non-lower dependency "
+                    f"({dl},{dx},{dy}) for tile ({level},{x},{y}); require dep_level < level to avoid cycles."
+                )
+            self._validate_tile_coords(dl, dx, dy)
+            key = (dl, dx, dy)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(key)
+        return out
+
+    def _ensure_tile_on_disk(self, level: int, x: int, y: int, *, stack: Set[Tuple[int, int, int]]) -> None:
+        path = _tile_path(self.dataset_path, level, x, y)
+        if os.path.exists(path):
+            return
+        img = self._render_with_stack(level, x, y, stack=stack)
+        if os.path.exists(path):
+            return
+        _atomic_save_image(img, path)
+
+    def _render_with_stack(self, level: int, x: int, y: int, *, stack: Set[Tuple[int, int, int]]):
+        key = (int(level), int(x), int(y))
+        if key in stack:
+            raise RuntimeError(f"Dependency cycle detected while rendering tile {key}")
+        stack.add(key)
+        try:
+            for dep_level, dep_x, dep_y in self._required_tiles(int(level), int(x), int(y)):
+                self._ensure_tile_on_disk(dep_level, dep_x, dep_y, stack=stack)
+            return self.real_renderer.render(int(level), int(x), int(y))
+        finally:
+            stack.remove(key)
+
     def render(self, level, x, y):
-        # 1. Ensure parent exists if level > 0
-        if level > 0:
-            parent_level = level - 1
-            parent_x = x // 2
-            parent_y = y // 2
-            
-            parent_dir = os.path.join(self.dataset_path, str(parent_level), str(parent_x))
-            parent_path = os.path.join(parent_dir, f"{parent_y}{TILE_EXTENSION}")
-            
-            # Check if parent exists
-            if not os.path.exists(parent_path):
-                # Recursive call to generate parent
-                parent_img = self.render(parent_level, parent_x, parent_y)
-                
-                os.makedirs(parent_dir, exist_ok=True)
-                
-                # Atomic Write Pattern to prevent race conditions
-                try:
-                    # Create temp file in the same dir to ensure same filesystem (for rename)
-                    fd, temp_path = tempfile.mkstemp(dir=parent_dir, suffix=TILE_EXTENSION)
-                    os.close(fd)
-                    
-                    parent_img.save(temp_path, format=TILE_FORMAT, **TILE_WEBP_PARAMS)
-                    
-                    # Atomic replace
-                    os.replace(temp_path, parent_path)
-                except OSError as e:
-                    # Clean up temp file if it still exists
-                    if 'temp_path' in locals() and os.path.exists(temp_path):
-                        os.remove(temp_path)
-                    
-                    # If rename failed because another thread beat us to it (target exists), that's fine.
-                    # Otherwise, re-raise the error.
-                    if not os.path.exists(parent_path):
-                        raise e
+        return self._render_with_stack(int(level), int(x), int(y), stack=set())
 
-        # 2. Render actual tile
-        return self.real_renderer.render(level, x, y)
-
-def load_renderer(renderer_path: str, tile_size: int, renderer_kwargs: Dict[str, Any], dataset_path: str = None):
+def load_renderer(
+    renderer_path: str,
+    tile_size: int,
+    renderer_kwargs: Dict[str, Any],
+    dataset_path: str = None,
+):
     """
     Load and instantiate a renderer class given a module path string of the form
     'module.submodule:ClassName' or 'module.submodule.ClassName'.
     
-    If dataset_path is provided, wraps the renderer to enforce recursive parent generation.
+    If dataset_path is provided, wraps the renderer to enforce dependency policies
+    (defaults to the legacy "direct parent required" behavior).
     """
     if ':' in renderer_path:
         module_path, class_name = renderer_path.split(':', 1)
@@ -161,4 +232,3 @@ def generate_tile_manifest(dataset_dir):
     
     with open(manifest_path, 'w') as f:
         json.dump(tiles, f)
-

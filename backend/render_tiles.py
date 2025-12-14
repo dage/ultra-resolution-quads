@@ -477,12 +477,12 @@ def main():
         print(f"Generating initial tile manifest for {dataset_id}...")
         generate_tile_manifest(dataset_tiles_root)
 
-        # Instantiate renderer in main process for checks/fallback
-        renderer = load_renderer(renderer_path, tile_size, merged_renderer_kwargs, dataset_path=dataset_tiles_root)
-        
         # Prepare renderer config for workers (to avoid pickling the instance)
         # Structure: (renderer_path_str, tile_size_int, kwargs_dict, dataset_path_str)
         renderer_config_tuple = (renderer_path, tile_size, merged_renderer_kwargs, dataset_tiles_root)
+
+        # Instantiate renderer in main process (keeps behavior consistent for workers=0).
+        renderer = load_renderer(renderer_path, tile_size, merged_renderer_kwargs, dataset_path=dataset_tiles_root)
 
         print(f"Initializing dataset: {dataset_id}")
         
