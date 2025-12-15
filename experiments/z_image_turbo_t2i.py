@@ -53,7 +53,7 @@ def main() -> int:
     seed = args.seed if args.seed != 0 else random.randint(1, 10_000_000_000)
 
     here = Path(__file__).resolve()
-    workflow_path = here.with_name("z_image_turbo_t2i_workflow.json")
+    workflow_path = (here.parent / "iterate_t2i" / "workflows" / "z_image_turbo_t2i_workflow.json")
     out_dir = REPO_ROOT / "artifacts" / "z_image_turbo_t2i"
     out_dir.mkdir(parents=True, exist_ok=True)
 

@@ -1,0 +1,23 @@
+{
+  "t2i": {
+    "prompt": { "node": "6", "key": "text" },
+    "sampler": { "node": "3", "seed": "seed" },
+    "save_node": "9",
+    "model": {
+      "unet": { "node": "13", "key": "unet_name" },
+      "clip": { "node": "16", "key": "clip_name" }
+    }
+  },
+  "i2i": {
+    "ctx_images": [{ "node": "100", "key": "image" }],
+    "mask_images": [{ "node": "101", "key": "image" }],
+    "prompt": { "node": "6", "key": "prompt" },
+    "sampler": { "node": "3", "seed": "seed", "denoise": "denoise", "steps": "steps", "cfg": "cfg" },
+    "save_node": "9",
+    "model": {
+      "unet": { "node": "13", "key": "unet_name" },
+      "clip": { "node": "16", "key": "clip_name" }
+    }
+  }
+}
+

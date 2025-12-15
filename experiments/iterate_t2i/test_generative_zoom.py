@@ -7,10 +7,10 @@ import argparse
 from pathlib import Path
 from PIL import Image
 
-# Add project root
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-# Add backend to path so internal imports in render_tiles work (e.g. import camera_utils)
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../backend')))
+# Add repo root and backend to sys.path (so internal imports in render_tiles work, e.g. import camera_utils)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "backend"))
 
 from backend import render_tiles
 from backend.renderer_utils import load_renderer

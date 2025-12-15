@@ -657,7 +657,7 @@ def main() -> int:
     seed = args.seed if args.seed != 0 else random.randint(1, 10_000_000_000)
 
     here = Path(__file__).resolve()
-    workflow_path = here.with_name("comfyui_hallucination_test_comfyui_workflow.json")
+    workflow_path = (here.parent / "iterate_t2i" / "workflows" / "comfyui_hallucination_test_comfyui_workflow.json")
     out_dir = REPO_ROOT / "artifacts" / "comfyui_hallucination_test"
     out_dir.mkdir(parents=True, exist_ok=True)
 

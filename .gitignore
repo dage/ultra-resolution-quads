@@ -3,6 +3,10 @@ datasets/*/*/
 !datasets/*/*.json
 !datasets/*/render.py
 !datasets/*/*.md
+datasets/genzoom_exp_*/
+datasets/*/temp_*.png
+datasets/*/temp_*.jpg
+datasets/*/temp_*.jpeg
 
 # General ignores
 **/__pycache__/

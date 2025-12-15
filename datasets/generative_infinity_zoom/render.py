@@ -60,9 +60,9 @@ class GenerativeInfiniteZoomRenderer:
 
         repo_root = Path(__file__).resolve().parents[2]
 
-        self.wf_t2i_path = repo_root / "experiments" / "z_image_turbo_t2i_workflow.json"
+        self.wf_t2i_path = repo_root / "experiments" / "iterate_t2i" / "workflows" / "z_image_turbo_t2i_workflow.json"
 
-        self.wf_i2i_path = repo_root / "experiments" / "comfyui_hallucination_test_comfyui_workflow.json"
+        self.wf_i2i_path = repo_root / "experiments" / "iterate_t2i" / "workflows" / "comfyui_hallucination_test_comfyui_workflow.json"
 
         
 
@@ -70,11 +70,11 @@ class GenerativeInfiniteZoomRenderer:
 
         if not self.wf_t2i_path.exists():
 
-             self.wf_t2i_path = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../experiments/z_image_turbo_t2i_workflow.json')))
+             self.wf_t2i_path = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../experiments/iterate_t2i/workflows/z_image_turbo_t2i_workflow.json')))
 
         if not self.wf_i2i_path.exists():
 
-             self.wf_i2i_path = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../experiments/comfyui_hallucination_test_comfyui_workflow.json')))
+             self.wf_i2i_path = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../experiments/iterate_t2i/workflows/comfyui_hallucination_test_comfyui_workflow.json')))
 
 
 

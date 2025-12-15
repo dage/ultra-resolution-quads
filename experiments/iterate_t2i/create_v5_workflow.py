@@ -1,0 +1,61 @@
+import json
+
+# V5 Workflow for 256x256 Tile Size
+# Canvas: 512x512 (Target 256 in center + 128 padding)
+
+wf = {
+    "3": {
+        "inputs": {
+            "seed": 0,
+            "steps": 8,
+            "cfg": 1,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "denoise": 0.1,
+            "model": ["13", 0],
+            "positive": ["6", 0],
+            "negative": ["7", 0],
+            "latent_image": ["102", 0],
+        },
+        "class_type": "KSampler",
+    },
+    "6": {
+        "inputs": {
+            "prompt": "Generate the missing center part of this image. The surrounding texture shows the context. Ensure seamless blending. High fidelity, 8k.",
+            "clip": ["16", 0],
+            "image": ["100", 0],
+        },
+        "class_type": "TextEncodeQwenImageEdit",
+    },
+    "7": {
+        "inputs": {"text": "low quality, blurry", "clip": ["16", 0]},
+        "class_type": "CLIPTextEncode",
+    },
+    "8": {"inputs": {"samples": ["3", 0], "vae": ["12", 0]}, "class_type": "VAEDecode"},
+    "9": {"inputs": {"filename_prefix": "GenZoomV5", "images": ["103", 0]}, "class_type": "SaveImage"},
+    "12": {"inputs": {"vae_name": "ae.safetensors"}, "class_type": "VAELoader"},
+    "13": {"inputs": {"unet_name": "z_image_turbo-Q5_K_S.gguf"}, "class_type": "UnetLoaderGGUF"},
+    "16": {
+        "inputs": {"clip_name": "Qwen3-4B-Instruct-2507-Q5_K_M.gguf", "type": "qwen_image"},
+        "class_type": "CLIPLoaderGGUF",
+    },
+    "100": {"inputs": {"image": "ctx.png", "upload": "image"}, "class_type": "LoadImage"},
+    "101": {"inputs": {"image": "mask.png", "upload": "image"}, "class_type": "LoadImage"},
+    "21": {"inputs": {"pixels": ["100", 0], "vae": ["12", 0]}, "class_type": "VAEEncode"},
+    "102": {"inputs": {"samples": ["21", 0], "mask": ["101", 1]}, "class_type": "SetLatentNoiseMask"},
+    "103": {
+        "inputs": {
+            "image": ["8", 0],
+            "width": 256,
+            "height": 256,
+            "x": 128,  # Center of 512x512 canvas (128 to 384)
+            "y": 128,
+        },
+        "class_type": "ImageCrop",
+    },
+}
+
+with open("experiments/iterate_t2i/workflows/genzoom_inpaint_setlatent_workflow.json", "w") as f:
+    json.dump(wf, f, indent=2)
+
+print("Created V5 Workflow (256x256).")
