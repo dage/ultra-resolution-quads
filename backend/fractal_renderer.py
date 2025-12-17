@@ -192,7 +192,10 @@ class FractalShadesRenderer:
         
         os.makedirs(os.path.dirname(final_path), exist_ok=True)
         
-        model_dir = os.path.join(self.output_dir, f"_{batch_prefix}_tmp")
+        import uuid
+        unique_suffix = str(uuid.uuid4())[:8]
+        model_dir = os.path.join(self.output_dir, f"_{batch_prefix}_{unique_suffix}_tmp")
+        
         if os.path.exists(model_dir):
             shutil.rmtree(model_dir)
         os.makedirs(model_dir, exist_ok=True)
