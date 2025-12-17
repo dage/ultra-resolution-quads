@@ -54,9 +54,9 @@ class PerturbDeepEmbeddedJuliaRenderer:
         u = (Decimal(tile_x) + Decimal("0.5")) / num_tiles - Decimal("0.5")
         v = Decimal("0.5") - (Decimal(tile_y) + Decimal("0.5")) / num_tiles
         tile_dx = self.root_dx / (Decimal(2) ** level)
-        v = v / self.xy_ratio
-
-        # Match gallery/integrator mapping: offsets use root_dx, with v scaled by ratio.
+        # Tiles are always rendered as square images; the viewer handles viewport aspect
+        # by selecting the appropriate set of square tiles. Keep the complex-plane
+        # mapping isotropic within each tile (no axis scaling).
         d_re = self.root_dx * u
         d_im = self.root_dx * v
 
@@ -73,8 +73,9 @@ class PerturbDeepEmbeddedJuliaRenderer:
         render_params["return_pillow_image"] = True
         render_params["batch_prefix"] = f"pdej_{level}_{tile_x}_{tile_y}"
 
-        # Preserve gallery aspect for each tile; frontend will handle non-square tiles.
-        render_params["xy_ratio"] = float(self.xy_ratio)
+        # Render square tiles; avoid generating a rectangular intermediate that would be
+        # squeezed into a square tile by the viewer.
+        render_params["xy_ratio"] = 1.0
 
         _, img = self.fs_renderer.render(**render_params)
         return img
