@@ -284,6 +284,21 @@ class RequestManager {
         this.queue = filtered;
     }
 
+    clearLiveQueue() {
+        const kept = [];
+        for (const req of this.queue) {
+            if (req.type === 'live') {
+                if (req.options && req.options.element) {
+                    this.clearQueueClass(req.options.element);
+                }
+            } else {
+                kept.push(req);
+            }
+        }
+        this.queue = kept;
+        this.updateQueuePositions();
+    }
+
     getVisualDistance(req, camera, viewSize) {
         const bounds = this.getTileBounds(req, camera, viewSize);
         const centerX = (bounds.minX + bounds.maxX) / 2;
@@ -1027,6 +1042,9 @@ function handleLiveRenderToggle(enabled) {
         stopQueueStatusPolling();
         state.backendStatus = null;
         if (els && els.queueStatus) els.queueStatus.classList.add('hidden');
+        if (typeof requestManager !== 'undefined') {
+             requestManager.clearLiveQueue();
+        }
     }
 }
 
