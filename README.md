@@ -1,9 +1,8 @@
 # Ultra-Resolution Quads
 
-A precision-safe deep-zoom viewer + pluggable tile renderers (fractals today, text-to-image next).
+**Ultra-Resolution Quads** is a high-performance tiled rendering system designed to support "infinite" zoom capabilities without floating-point precision errors. It relies on a sparse quadtree structure to serve and explore ultra-resolution imagery.
 
-This repo is a working prototype for a “true infinite zoom” pipeline:
-render tiles on demand, cache them, and navigate to extreme zoom levels without the usual float64 drift.
+The project is divided into a core viewer (frontend) and pluggable backend renderers that generate the tile content.
 
 ## Status
 
@@ -11,124 +10,135 @@ render tiles on demand, cache them, and navigate to extreme zoom levels without 
 - Current renderer focus: fractals (arbitrary precision via `fractalshades`) + a debug grid renderer.
 - In progress: text-to-image / diffusion-based renderers that can generate coherent tiles across scale.
 
-## Quickstart (Local)
+## 🏗 Architecture
 
-Prereqs: Python 3.11+ and Node.js. We require both since we try to avoid duplicating logic across front-end and back-end by having a shared JS code folder.
+### 1. Core Viewer (Frontend)
+The frontend is a vanilla JS web application located in `frontend/`. It handles:
+-   **Quadtree Navigation:** Efficiently loads tiles based on zoom level and viewport.
+-   **Layer-Stack Camera:** Uses integer coordinates + float offsets to bypass standard floating-point limitations.
+-   **Tile Caching & Rendering:** Manages DOM elements or Canvas drawing for smooth panning and zooming.
+-   **Precision:** Uses `Decimal.js` for camera math to reach very deep zoom levels.
 
+### 2. Pluggable Renderers (Backend)
+The backend generates the static image tiles served to the viewer. The system supports both offline batch rendering and live on-demand rendering.
+
+- **Offline (Batch):** `backend/render_tiles.py` generates the full pyramid, path-driven, or explicit tile list.
+- **Live (On-demand):** `backend/live_server.py` (FastAPI) renders missing tiles on the fly and caches them.
+
+---
+
+## 🚀 Quickstart (Local)
+
+Prereqs: Python 3.11+ and Node.js.
+
+1.  **Install Dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+2.  **Start the Repo:**
+    ```bash
+    ./start.sh
+    ```
+    Open `http://localhost:8001/` (redirects to `frontend/index.html`).
+
+3.  **Generate a Tiled Dataset (Optional):**
+    *Option A: Debug Grid (Fast)*
+    ```bash
+    python backend/render_tiles.py --dataset debug_quadtile
+    ```
+    
+    *Option B: Deep Zoom Fractal (Computationally Intensive)*
+    ```bash
+    python backend/render_tiles.py --dataset glossy_seahorse --mode path
+    ```
+
+---
+
+## 🌟 Fractal Gallery Showcase
+
+We include a dedicated gallery generation script to demonstrate the capabilities of the Fractal Renderer.
+
+| Type | Description |
+| :--- | :--- |
+| **Mandelbrot** | The classic set, supported with arbitrary precision. |
+| **Burning Ship** | Including variants like **Shark Fin** and **Perpendicular**. |
+| **Power Tower** | Tetration fractals showing map-like structures. |
+| **Visualization** | Supports 3D glossy lighting, Distance Estimation (DEM), and Fieldlines. |
+
+### Generating the Gallery
+Run the following command to generate a set of 10 high-quality example fractals:
 ```bash
-pip install -r requirements.txt
-./start.sh
+python experiments/fractal_gallery.py
 ```
+The images will be saved to `artifacts/gallery_v2/`.
 
-Open `http://localhost:8001/` (redirects to `frontend/index.html`).
+---
 
-Fastest “it works” dataset:
-```bash
-python backend/render_tiles.py --dataset debug_quadtile
-```
+## 🔧 How It Works
 
-Then select `Debug Quadtile` in the UI.
-
-Optional extras:
-- Fractal datasets: `pip install fractalshades numba`
-- Browser automation: `pip install playwright && playwright install chromium`
-
-## How It Works
-
-**Frontend (`frontend/`)**
-- Vanilla JS viewer (no build step).
-- Precision-safe camera math using `Decimal.js` + integer tile coordinates.
-- Sparse quadtree tile selection + prioritized request queue.
-- Optional “Live Render” mode that asks the backend to render missing tiles on demand.
-
-**Backend (`backend/`)**
-- `backend/live_server.py`: FastAPI server that renders a missing tile, writes it to disk, and returns it.
+### Backend (`backend/`)
+- `live_server.py`: FastAPI server that renders a missing tile, writes it to disk, and returns it.
   - Endpoint: `GET /live/<dataset>/<level>/<x>/<y>.webp`
   - Health/progress: `GET /status`
-- `backend/render_tiles.py`: offline/batch tile generator (full pyramid, path-driven, or explicit tile list).
-- `backend/renderer_utils.py`: dynamic renderer loading + `tiles.json` manifest generation.
+- `render_tiles.py`: offline/batch tile generator.
+- `renderer_utils.py`: dynamic renderer loading + `tiles.json` manifest generation.
 
-**Dataset format (`datasets/<id>/`)**
+### Dataset Format (`datasets/<id>/`)
 - `config.json`: dataset metadata + renderer wiring.
 - `render.py`: the renderer class referenced by `config.json`.
-- Rendered tiles (generated locally, gitignored): `datasets/<id>/<level>/<x>/<y>.webp`
-- Optional manifest (generated locally, gitignored): `datasets/<id>/tiles.json`
+- Rendered tiles: `datasets/<id>/<level>/<x>/<y>.webp` (gitignored).
+- Optional manifest: `datasets/<id>/tiles.json` (gitignored).
 
-## Rendering Tiles
-
-**Batch render (recommended for reproducible demos)**
+### Rendering Tiles
+**Batch render:**
 ```bash
 python backend/render_tiles.py --dataset debug_quadtile --mode full --max_level 5
 python backend/render_tiles.py --dataset glossy_seahorse --mode path
 python backend/render_tiles.py --dataset multibrot_p4 --tiles "0/0/0,1/0/0,1/1/0"
 ```
 
-Notes:
-- `--mode full` generates the full pyramid up to `--max_level`.
-- `--mode path` generates tiles needed along the dataset’s camera path (`render_config.path`).
-- Worker defaults come from each dataset’s `supports_multithreading` flag; override with `--workers`.
-
-**Live render (great for exploration)**
+**Live render:**
 - Start the repo with `./start.sh`
 - Toggle “Live Render” in the UI
 - Pan/zoom; missing tiles are rendered and cached to `datasets/<id>/...`
 
-## Adding a New Renderer / Dataset
+---
 
-1. Create `datasets/<new_id>/render.py` with a renderer class:
-   - Constructor takes `tile_size` (or reads it from kwargs).
-   - Implements `render(level, x, y) -> PIL.Image.Image`.
-2. Create `datasets/<new_id>/config.json`:
-   - `renderer`: import path like `datasets.<new_id>.render:MyRenderer`
-   - `tile_size`: 256/512/1024/…
-   - Optional `renderer_args`, `render_config`, and `supports_multithreading`.
-3. Add it to `datasets/index.json` so it appears in the UI.
+## 🧪 Experiments & Tooling
 
-## Text-to-Image Direction (WIP)
+### Telemetry & Automation
+The viewer includes features for automated testing and performance profiling.
+*   `autoplay`: If `true`, automatically starts the camera path.
+*   `window.externalLoopHook(state, timestamp)`: Hook for custom logic on every frame.
+*   **Experiment Runner:** `python scripts/run_browser_experiment.py` automates browser sessions with Playwright.
 
-There isn’t a production T2I tile renderer wired into `datasets/` yet, but the repo already contains:
-- A robust ComfyUI API client: `backend/comfyui_client.py`
-- Workflow runner CLI: `backend/tools/run_comfyui_workflow.py`
-- Experiments for text-to-image and “hallucination”/upscale analysis:
-  - `experiments/z_image_turbo_t2i.py`
-  - `experiments/comfyui_hallucination_test.py`
+### Text-to-Image (WIP)
+The repo contains a robust ComfyUI API client and experiments for T2I tile rendering:
+- `backend/comfyui_client.py`: API client.
+- `experiments/z_image_turbo_t2i.py`: Text-to-image generation.
+- `experiments/comfyui_hallucination_test.py`: Hallucination/upscale analysis.
+- `experiments/iterate_t2i/`: Dedicated folder for iterating on seamless generative zoom.
 
-The intended next step is a dataset renderer that calls a model (local or ComfyUI) with coordinate- and scale-aware conditioning, so tiles remain coherent across:
-adjacent tiles, parent/child tiles, and camera motion.
+### Perplexity Search (CLI)
+Use Perplexity Sonar via OpenRouter for fresh web context:
+```bash
+python scripts/perplexity_search.py "latest research on ultra-high-res tile streaming"
+```
 
-## Experiments & Tooling (Optional)
+---
 
-**Browser automation + telemetry**
-- `scripts/run_browser_experiment.py` (Playwright) can inject `window.externalLoopHook` and record `window.telemetryData`.
-- The viewer supports URL params like `?dataset=<id>&autoplay=true`.
-
-**OpenRouter utilities**
-- `scripts/perplexity_search.py` uses OpenRouter + Perplexity Sonar (needs `OPENROUTER_API_KEY`).
-- `backend/tools/analyze_image.py` can run vision-model analysis for experiment outputs.
-
-Environment variables live in `.env` (see `.env_template`).
-
-## Tests
+## 🔍 Tests
 
 ```bash
 bash tests/run_all_tests.sh
 ```
+Includes camera parity tests, frontend math tests, and path audits.
 
-This runs:
-- Python parity tests for camera/path logic
-- Node-based smoke tests for frontend math and view logic
-- A path/tiles audit script
+## 📖 Documentation
 
-## Contributing
-
-Contributions are welcome. 
-
-## Credits
-
-- `fractalshades` for deep-zoom fractal math and rendering
-- FastAPI/Uvicorn for the live tile server
-- ComfyUI for AI based image generation and editing
-- Decimal.js for precision-safe camera math to reach very deep zoom levels
+-   **Fractal Generation:** See [docs/FRACTALSHADES_GUIDE.md](docs/FRACTALSHADES_GUIDE.md).
+-   **Project Internals:** See `PRD.md` (if available).
 
 ## License
 
